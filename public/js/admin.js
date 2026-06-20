@@ -589,6 +589,26 @@ async function renderSettingsTab(el) {
           <label class="form-check"><input type="checkbox" id="s-email-enabled" ${(s.email_enabled==='true'||s.email_enabled==='1')?'checked':''}> <span>Enable email notifications</span></label>
         </div>
         <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+
+        <div style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-500);margin-top:28px;margin-bottom:12px">Backup &amp; Restore</div>
+        <div class="form-group">
+          <label class="form-label">Download Backup</label>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <button class="btn btn-secondary" id="backup-download-btn" onclick="downloadBackup(this)">&#8595; Download Backup</button>
+            <span style="font-size:.8rem;color:var(--gray-500)">ZIP of database + all uploaded files</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Restore from Backup</label>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <label class="btn btn-secondary" style="cursor:pointer;margin:0">
+              Choose .zip File
+              <input type="file" accept=".zip" style="display:none" onchange="restoreBackup(this)">
+            </label>
+            <span style="font-size:.8rem;color:var(--gray-500)">Select a previously downloaded backup to restore</span>
+          </div>
+          <div id="restore-status" style="display:none;margin-top:10px"></div>
+        </div>
       </div>
     </div>`;
 }
@@ -622,6 +642,79 @@ async function uploadBannerImage(input) {
     toast('Image uploaded', 'success');
   } catch (e) { toast(e.message, 'error'); }
   finally { btn.childNodes[0].textContent = origText; input.value = ''; }
+}
+
+// ── BACKUP & RESTORE ───────────────────────────────────────────────
+async function downloadBackup(btn) {
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Preparing…';
+  try {
+    const res = await fetch('/api/admin/backup', {
+      headers: { Authorization: 'Bearer ' + state.token },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Backup failed');
+    }
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = `randolph-portal-backup-${new Date().toISOString().slice(0,10)}.zip`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('Backup downloaded', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = orig; }
+}
+
+async function restoreBackup(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (!confirm(
+    `Restore from "${file.name}"?\n\n` +
+    `WARNING: This will stage a full replacement of the database and uploaded files. ` +
+    `You must restart the server after uploading to apply the changes. ` +
+    `This cannot be undone.`
+  )) { input.value = ''; return; }
+
+  const statusEl = document.getElementById('restore-status');
+  statusEl.style.display = '';
+  statusEl.innerHTML = `<div class="alert alert-warning">Uploading backup — please wait…</div>`;
+
+  const fd = new FormData();
+  fd.append('backup', file);
+  try {
+    const res = await fetch('/api/admin/restore', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + state.token },
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Restore failed');
+
+    statusEl.innerHTML = `
+      <div class="alert alert-success" style="flex-direction:column;align-items:flex-start;gap:10px">
+        <div><strong>Backup staged.</strong> Click Restart to apply — the portal will be offline for a few seconds while it restarts.</div>
+        <button class="btn btn-danger btn-sm" onclick="restartServer()">Restart &amp; Apply</button>
+      </div>`;
+  } catch (e) {
+    statusEl.innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+    toast(e.message, 'error');
+  }
+  input.value = '';
+}
+
+async function restartServer() {
+  if (!confirm('Restart the server now? You will be signed out and redirected to the login page.')) return;
+  try {
+    await fetch('/api/admin/restart', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + state.token },
+    });
+  } catch (_) { /* server going down — expect network error */ }
+  toast('Server restarting…', 'warning');
+  setTimeout(() => signOut(), 2500);
 }
 
 async function saveSettings() {

@@ -6,6 +6,32 @@ const fs = require('fs');
 const dataDir = path.join(__dirname, '../data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
+// ── Pending restore check — must run before opening the DB ───────────────────
+(function applyPendingRestore() {
+  const pendingDb      = path.join(dataDir, 'portal.db.pending');
+  const pendingUploads = path.join(dataDir, 'uploads.pending');
+  const currentDb      = path.join(dataDir, 'portal.db');
+  const uploadsDir     = path.join(__dirname, '../uploads');
+  if (!fs.existsSync(pendingDb)) return;
+  try {
+    if (fs.existsSync(currentDb)) fs.renameSync(currentDb, currentDb + '.bak');
+    fs.renameSync(pendingDb, currentDb);
+    if (fs.existsSync(pendingUploads)) {
+      if (fs.existsSync(uploadsDir)) fs.rmSync(uploadsDir, { recursive: true, force: true });
+      try {
+        fs.renameSync(pendingUploads, uploadsDir);
+      } catch {
+        // Cross-device rename — fall back to copy then delete
+        fs.cpSync(pendingUploads, uploadsDir, { recursive: true });
+        fs.rmSync(pendingUploads, { recursive: true, force: true });
+      }
+    }
+    console.log('[Restore] Backup applied successfully.');
+  } catch (e) {
+    console.error('[Restore] Failed to apply pending restore:', e.message);
+  }
+})();
+
 const db = new Database(path.join(dataDir, 'portal.db'));
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');

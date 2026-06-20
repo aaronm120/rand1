@@ -25,7 +25,6 @@ route('directory', async () => {
           ${usr.title ? `<div class="directory-person-meta">${esc(usr.title)}</div>` : ''}
           ${usr.phone ? `<div class="directory-person-meta"><a href="tel:${esc(usr.phone)}">${esc(usr.phone)}</a></div>` : ''}
           ${usr.email ? `<div class="directory-person-meta"><a href="mailto:${esc(usr.email)}">${esc(usr.email)}</a></div>` : ''}
-          ${roleBadge(usr.role)}
         </div>
       </div>`).join('') : '';
 

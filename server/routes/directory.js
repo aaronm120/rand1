@@ -27,7 +27,7 @@ router.get('/', requireAuth, (req, res) => {
     // Users: PM sees all, tenants see opted-in users
     const optOutFilter = pm ? '' : 'AND u.directory_opt_out = 0';
     let users = db.prepare(`
-      SELECT u.id, u.name, u.title, u.email, u.phone, u.directory_opt_out
+      SELECT u.id, u.name, u.title, u.email, u.phone, u.directory_opt_out, u.role
       FROM users u
       WHERE u.tenant_id = ? AND u.active = 1 ${optOutFilter}
       ORDER BY u.name

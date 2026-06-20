@@ -55,6 +55,7 @@ app.use('/api/leases',        require('./routes/leases'));
 app.use('/api/tenants',       require('./routes/tenants'));
 app.use('/api/categories',    require('./routes/categories'));
 app.use('/api/settings',      settingsRouter);
+app.use('/api/admin',         require('./routes/backup'));
 
 // Serve attachment files with auth check
 const jwt = require('jsonwebtoken');
