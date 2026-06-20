@@ -12,6 +12,7 @@ router.get('/', requireAuth, (req, res) => {
   // Build tenants with their users
   let tenantWhere = ['t.active = 1'];
   let tenantParams = [];
+  if (!pm) tenantWhere.push('t.directory_hidden = 0');
   if (building && ['728','730','732'].includes(building)) {
     tenantWhere.push('t.building = ?');
     tenantParams.push(building);

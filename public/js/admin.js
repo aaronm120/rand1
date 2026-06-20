@@ -196,7 +196,7 @@ async function renderTenantsTab(el) {
         <div class="list-item">
           <div class="list-item-icon" style="background:var(--primary-light);color:var(--primary)">🏢</div>
           <div class="list-item-body">
-            <div class="list-item-title">${esc(t.name)}</div>
+            <div class="list-item-title">${esc(t.name)} ${t.directory_hidden ? '<span class="badge badge-gray" style="font-size:.7rem">Hidden from Directory</span>' : ''}</div>
             <div class="list-item-meta">${buildingTag(t.building)} ${t.suite ? `· Suite ${esc(t.suite)}` : ''} · ${t.user_count||0} users</div>
           </div>
           <div style="display:flex;gap:6px">
@@ -228,6 +228,9 @@ function showTenantModal(id) {
           <div class="form-group"><label class="form-label">Phone</label><input class="form-input" id="t-phone" value="${esc(t.phone||'')}"></div>
           <div class="form-group"><label class="form-label">Industry</label><input class="form-input" id="t-industry" value="${esc(t.industry||'')}"></div>
         </div>
+        <div class="form-group" style="margin-top:4px">
+          <label class="form-check"><input type="checkbox" id="t-dir-hidden" ${t.directory_hidden ? 'checked' : ''}> <span>Hide from Building Directory</span></label>
+        </div>
       </div>
       <div class="modal-footer">
         ${editing ? `<button class="btn btn-danger" onclick="deleteTenant(${id})">Delete Tenant</button>` : ''}
@@ -248,11 +251,12 @@ async function deleteTenant(id) {
 
 async function saveTenant(id) {
   const body = {
-    name:     document.getElementById('t-name')?.value.trim(),
-    building: document.getElementById('t-building')?.value,
-    suite:    document.getElementById('t-suite')?.value || null,
-    phone:    document.getElementById('t-phone')?.value || null,
-    industry: document.getElementById('t-industry')?.value || null,
+    name:             document.getElementById('t-name')?.value.trim(),
+    building:         document.getElementById('t-building')?.value,
+    suite:            document.getElementById('t-suite')?.value || null,
+    phone:            document.getElementById('t-phone')?.value || null,
+    industry:         document.getElementById('t-industry')?.value || null,
+    directory_hidden: document.getElementById('t-dir-hidden')?.checked ? 1 : 0,
   };
   if (!body.name) { toast('Company name is required', 'warning'); return; }
   try {
@@ -585,10 +589,28 @@ async function renderSettingsTab(el) {
         <div class="form-row">
           <div class="form-group"><label class="form-label">From Email</label><input class="form-input" id="s-from-email" type="email" value="${esc(s.smtp_from||'')}" placeholder="portal@randolphofficecenter.com"></div>
         </div>
+        <div class="form-group" style="margin-top:4px">
+          <label class="form-label">Send Test Email</label>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input class="form-input" type="email" id="s-test-email" placeholder="Recipient address…" value="${esc(state.user?.email||'')}" style="max-width:260px">
+            <button class="btn btn-secondary btn-sm" onclick="sendTestEmail(this)">Send Test</button>
+          </div>
+          <div id="test-email-status" style="display:none;margin-top:8px;font-size:.85rem"></div>
+          <div class="form-hint">Uses the SMTP settings above — no need to save first. The password field can be left blank to use the stored password.</div>
+        </div>
         <div class="form-group">
           <label class="form-check"><input type="checkbox" id="s-email-enabled" ${(s.email_enabled==='true'||s.email_enabled==='1')?'checked':''}> <span>Enable email notifications</span></label>
         </div>
         <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+
+        <div style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-500);margin-top:28px;margin-bottom:12px">Maintenance Mode</div>
+        <div class="form-group">
+          <label class="form-check"><input type="checkbox" id="s-maint-mode" ${(s.maintenance_mode==='1'||s.maintenance_mode==='true')?'checked':''}> <span>Enable maintenance mode — blocks all tenant logins and shows a maintenance message</span></label>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Maintenance Message</label>
+          <textarea class="form-textarea" id="s-maint-msg" rows="2" placeholder="Message shown to tenants during maintenance…">${esc(s.maintenance_message||'')}</textarea>
+        </div>
 
         <div style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-500);margin-top:28px;margin-bottom:12px">Backup &amp; Restore</div>
         <div class="form-group">
@@ -717,6 +739,36 @@ async function restartServer() {
   setTimeout(() => signOut(), 2500);
 }
 
+async function sendTestEmail(btn) {
+  const to = document.getElementById('s-test-email')?.value.trim();
+  if (!to) { toast('Enter a recipient email address', 'warning'); return; }
+
+  const statusEl = document.getElementById('test-email-status');
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Sending…';
+  statusEl.style.display = 'none';
+
+  const body = {
+    to,
+    smtp_host: document.getElementById('s-smtp-host')?.value.trim(),
+    smtp_port: parseInt(document.getElementById('s-smtp-port')?.value) || 587,
+    smtp_user: document.getElementById('s-smtp-user')?.value.trim(),
+    smtp_from: document.getElementById('s-from-email')?.value.trim(),
+  };
+  const newPass = document.getElementById('s-smtp-pass')?.value;
+  if (newPass) body.smtp_pass = newPass;
+
+  try {
+    await apiFetch('POST', '/api/admin/test-email', body);
+    statusEl.style.display = '';
+    statusEl.innerHTML = '<span style="color:var(--success,#166534)">&#10003; Test email sent successfully.</span>';
+  } catch (e) {
+    statusEl.style.display = '';
+    statusEl.innerHTML = `<span style="color:var(--danger,#dc2626)">&#10005; ${esc(e.message)}</span>`;
+  }
+  btn.disabled = false; btn.textContent = orig;
+}
+
 async function saveSettings() {
   const body = {
     building_name:    document.getElementById('s-name')?.value.trim() || undefined,
@@ -728,8 +780,10 @@ async function saveSettings() {
     smtp_port:        parseInt(document.getElementById('s-smtp-port')?.value)||587,
     smtp_user:        document.getElementById('s-smtp-user')?.value || undefined,
     smtp_from:        document.getElementById('s-from-email')?.value || undefined,
-    email_enabled:    document.getElementById('s-email-enabled')?.checked ? '1' : '0',
-    banner_enabled:   document.getElementById('s-banner-enabled')?.checked ? '1' : '0',
+    email_enabled:        document.getElementById('s-email-enabled')?.checked ? '1' : '0',
+    maintenance_mode:     document.getElementById('s-maint-mode')?.checked ? '1' : '0',
+    maintenance_message:  document.getElementById('s-maint-msg')?.value || undefined,
+    banner_enabled:       document.getElementById('s-banner-enabled')?.checked ? '1' : '0',
     banner_image_url: document.getElementById('s-banner-url')?.value || '',
     banner_title:     document.getElementById('s-banner-title')?.value || '',
     banner_subtitle:  document.getElementById('s-banner-sub')?.value || '',

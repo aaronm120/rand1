@@ -53,12 +53,13 @@ router.patch('/:id', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'Access denied' });
   }
 
-  const { name, building, suite, active } = req.body;
+  const { name, building, suite, active, directory_hidden } = req.body;
   const newBuilding = isPM(req.user) && building ? building : tenant.building;
   const newActive = isPM(req.user) && active !== undefined ? (active ? 1 : 0) : tenant.active;
+  const newDirHidden = isPM(req.user) && directory_hidden !== undefined ? (directory_hidden ? 1 : 0) : (tenant.directory_hidden ?? 0);
 
-  db.prepare(`UPDATE tenants SET name=?, building=?, suite=?, active=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-    .run(name?.trim() || tenant.name, newBuilding, suite ?? tenant.suite, newActive, req.params.id);
+  db.prepare(`UPDATE tenants SET name=?, building=?, suite=?, active=?, directory_hidden=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+    .run(name?.trim() || tenant.name, newBuilding, suite ?? tenant.suite, newActive, newDirHidden, req.params.id);
 
   auditLog(req.user.id, 'update_tenant', 'tenant', req.params.id, null, req.ip);
   res.json(db.prepare('SELECT * FROM tenants WHERE id=?').get(req.params.id));

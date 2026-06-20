@@ -23,6 +23,9 @@ function visibleToUser(ann, user) {
 
 // GET /api/announcements
 router.get('/', requireAuth, (req, res) => {
+  // Auto-delete expired announcements before returning results
+  db.prepare(`DELETE FROM announcements WHERE expires_at IS NOT NULL AND expires_at <= datetime('now')`).run();
+
   const all = db.prepare(`
     SELECT a.*, u.name as author_name, t.name as target_tenant_name
     FROM announcements a
@@ -54,19 +57,20 @@ router.get('/:id', requireAuth, (req, res) => {
 
 // POST /api/announcements — PM only
 router.post('/', requirePM, (req, res) => {
-  const { title, content, target_type, target_building, target_tenant_id, urgent, pinned, publish_at } = req.body;
+  const { title, content, target_type, target_building, target_tenant_id, urgent, pinned, publish_at, expires_at } = req.body;
   if (!title?.trim() || !content?.trim()) return res.status(400).json({ error: 'Title and content are required' });
   if (!TARGET_TYPES.includes(target_type)) return res.status(400).json({ error: 'Invalid target type' });
 
   const publishTime = publish_at ? new Date(publish_at).toISOString() : new Date().toISOString();
+  const expiresTime = expires_at ? new Date(expires_at).toISOString() : null;
 
   const result = db.prepare(`
-    INSERT INTO announcements (title, content, author_id, target_type, target_building, target_tenant_id, urgent, pinned, publish_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO announcements (title, content, author_id, target_type, target_building, target_tenant_id, urgent, pinned, publish_at, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     title.trim(), content.trim(), req.user.id, target_type,
     target_building || null, target_tenant_id || null,
-    urgent ? 1 : 0, pinned ? 1 : 0, publishTime
+    urgent ? 1 : 0, pinned ? 1 : 0, publishTime, expiresTime
   );
 
   const ann = db.prepare(`
@@ -97,12 +101,13 @@ router.post('/', requirePM, (req, res) => {
 
 // PATCH /api/announcements/:id — PM only
 router.patch('/:id', requirePM, (req, res) => {
-  const { title, content, urgent, pinned } = req.body;
+  const { title, content, urgent, pinned, expires_at } = req.body;
   const ann = db.prepare('SELECT * FROM announcements WHERE id=?').get(req.params.id);
   if (!ann) return res.status(404).json({ error: 'Not found' });
-  db.prepare(`UPDATE announcements SET title=?, content=?, urgent=?, pinned=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+  const expiresTime = expires_at === '' ? null : (expires_at ? new Date(expires_at).toISOString() : ann.expires_at);
+  db.prepare(`UPDATE announcements SET title=?, content=?, urgent=?, pinned=?, expires_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
     .run(title || ann.title, content || ann.content, urgent !== undefined ? (urgent ? 1 : 0) : ann.urgent,
-      pinned !== undefined ? (pinned ? 1 : 0) : ann.pinned, req.params.id);
+      pinned !== undefined ? (pinned ? 1 : 0) : ann.pinned, expiresTime, req.params.id);
   auditLog(req.user.id, 'update_announcement', 'announcement', req.params.id, null, req.ip);
   res.json(db.prepare('SELECT * FROM announcements WHERE id=?').get(req.params.id));
 });

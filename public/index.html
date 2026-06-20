@@ -20,6 +20,9 @@
   </div>
 </div>
 
+<!-- Maintenance screen -->
+<div id="maintenance-screen" class="hidden" style="position:fixed;inset:0;background:var(--bg,#F0F4F9);z-index:9999;display:flex;align-items:center;justify-content:center"></div>
+
 <!-- Auth screen -->
 <div id="auth-screen" class="auth-screen hidden">
   <div class="auth-card-wrap">
@@ -88,6 +91,33 @@
     applyTheme(settings);
     updateBranding(settings);
   } catch(_) {}
+
+  const maintenance = state.settings.maintenance_mode === '1' || state.settings.maintenance_mode === 'true';
+
+  if (maintenance) {
+    // PM users bypass maintenance mode; everyone else sees the maintenance screen
+    if (state.token) {
+      try {
+        state.user = await apiFetch('GET', '/api/auth/me');
+        if (isPM(state.user)) {
+          if (localStorage.getItem('roc_admin_token') && !state.user.impersonatedBy) {
+            const payload = decodeJWTPayload(state.token);
+            if (payload.impersonatedBy) {
+              state.user.impersonatedBy     = payload.impersonatedBy;
+              state.user.impersonatedByName = payload.impersonatedByName;
+            }
+          }
+          showApp();
+          return;
+        }
+      } catch(_) {
+        localStorage.removeItem('roc_token');
+        state.token = null;
+      }
+    }
+    showMaintenance(state.settings);
+    return;
+  }
 
   if (state.token) {
     try {

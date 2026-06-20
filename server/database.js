@@ -73,6 +73,8 @@ const DEFAULT_SETTINGS = {
   smtp_pass: '',
   smtp_from: 'noreply@randolphofficecenter.com',
   email_enabled: 'false',
+  maintenance_mode: 'false',
+  maintenance_message: 'The portal is temporarily offline for scheduled maintenance. Please check back later.',
 };
 
 // ─── SCHEMA ───────────────────────────────────────────────────────────────────
@@ -291,6 +293,8 @@ function initializeDatabase() {
   try { db.exec('ALTER TABLE leases ADD COLUMN security_deposit REAL'); } catch (_) {}
   try { db.exec('ALTER TABLE leases ADD COLUMN lease_type TEXT'); } catch (_) {}
   try { db.exec('ALTER TABLE leases ADD COLUMN renewal_option TEXT'); } catch (_) {}
+  try { db.exec('ALTER TABLE tenants ADD COLUMN directory_hidden INTEGER DEFAULT 0'); } catch (_) {}
+  try { db.exec('ALTER TABLE announcements ADD COLUMN expires_at DATETIME'); } catch (_) {}
 
   // ── Seed default settings ─────────────────────────────────────────────────
   const upsert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

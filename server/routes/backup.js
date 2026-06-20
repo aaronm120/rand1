@@ -5,7 +5,8 @@ const os        = require('os');
 const archiver  = require('archiver');
 const unzipper  = require('unzipper');
 const multer    = require('multer');
-const { db }              = require('../database');
+const nodemailer          = require('nodemailer');
+const { db, getSettings } = require('../database');
 const { requirePMAdmin }  = require('../middleware/auth');
 
 const router   = express.Router();
@@ -103,6 +104,45 @@ router.post('/restore', requirePMAdmin, restoreUpload.single('backup'), async (r
     res.status(500).json({ error: err.message });
   } finally {
     try { fs.unlinkSync(zipPath); } catch (_) {}
+  }
+});
+
+// ── POST /api/admin/test-email ───────────────────────────────────────────────
+// Tests SMTP using the values from the form (not necessarily saved yet).
+// Falls back to the stored smtp_pass if the password field was left blank.
+router.post('/test-email', requirePMAdmin, async (req, res) => {
+  const { to, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from } = req.body;
+  if (!to)        return res.status(400).json({ error: 'Recipient email is required' });
+  if (!smtp_host) return res.status(400).json({ error: 'SMTP host is required' });
+
+  // Use the provided password, or fall back to what's already stored
+  const password = smtp_pass || getSettings().smtp_pass || '';
+  const port     = parseInt(smtp_port, 10) || 587;
+
+  const transporter = nodemailer.createTransport({
+    host:   smtp_host,
+    port,
+    secure: port === 465,
+    auth:   smtp_user ? { user: smtp_user, pass: password } : undefined,
+  });
+
+  try {
+    await transporter.sendMail({
+      from:    smtp_from || 'noreply@randolphofficecenter.com',
+      to,
+      subject: 'Test Email — Randolph Office Center Portal',
+      html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+        <h2 style="color:#1B3A6B">Test Email</h2>
+        <p>This is a test message from the <strong>Randolph Office Center Tenant Portal</strong>.</p>
+        <p style="color:#166534;background:#dcfce7;padding:10px 14px;border-radius:6px">
+          &#10003; Your SMTP configuration is working correctly.
+        </p>
+        <p style="color:#999;font-size:12px;margin-top:24px">Sent via the Admin Panel · SMTP host: ${smtp_host}</p>
+      </div>`,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
   }
 });
 

@@ -325,8 +325,31 @@ async function exitImpersonation() {
 // ── App show/hide ──────────────────────────────────────────────────
 function showAuth(mode) {
   document.getElementById('app-shell').classList.add('hidden');
+  document.getElementById('maintenance-screen').classList.add('hidden');
   document.getElementById('auth-screen').classList.remove('hidden');
   renderAuthCard(mode);
+}
+
+function showMaintenance(s) {
+  document.getElementById('app-shell').classList.add('hidden');
+  document.getElementById('auth-screen').classList.add('hidden');
+  const el = document.getElementById('maintenance-screen');
+  const name = s?.building_name || 'Randolph Office Center';
+  const msg  = s?.maintenance_message || 'The portal is temporarily offline for scheduled maintenance. Please check back later.';
+  el.innerHTML = `
+    <div style="text-align:center;max-width:500px;padding:40px 24px">
+      <div style="font-size:3rem;margin-bottom:20px">🔧</div>
+      <div style="font-size:1.4rem;font-weight:700;color:var(--gray-900);margin-bottom:6px">${esc(name)}</div>
+      <div style="font-size:1rem;font-weight:600;color:var(--gray-600);margin-bottom:18px">Scheduled Maintenance</div>
+      <p style="color:var(--gray-500);line-height:1.7;margin-bottom:32px">${esc(msg)}</p>
+      <button onclick="showStaffLogin()" style="background:none;border:none;color:var(--gray-400);font-size:.8rem;cursor:pointer;text-decoration:underline">Staff Access</button>
+    </div>`;
+  el.classList.remove('hidden');
+}
+
+function showStaffLogin() {
+  document.getElementById('maintenance-screen').classList.add('hidden');
+  showAuth('login');
 }
 
 function showApp() {

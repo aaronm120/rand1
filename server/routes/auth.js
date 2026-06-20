@@ -1,7 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { db, auditLog } = require('../database');
+const { db, auditLog, getSettings } = require('../database');
 const { requireAuth, requirePMAdmin, isPM, JWT_SECRET } = require('../middleware/auth');
 
 const router = express.Router();
@@ -38,6 +38,14 @@ router.post('/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
   if (!user.active) return res.status(403).json({ error: 'This account has been deactivated. Contact building management.' });
+
+  // Block non-PM logins during maintenance mode
+  if (!['pm_admin', 'pm_user'].includes(user.role)) {
+    const settings = getSettings();
+    if (settings.maintenance_mode === '1' || settings.maintenance_mode === 'true') {
+      return res.status(503).json({ error: settings.maintenance_message || 'The portal is currently offline for maintenance.' });
+    }
+  }
 
   // Ensure notification prefs exist
   db.prepare('INSERT OR IGNORE INTO notification_prefs (user_id) VALUES (?)').run(user.id);

@@ -26,6 +26,7 @@ route('announcements', async () => {
       <div class="ann-card-footer">
         <span>${fmtDate(a.publish_at)}</span>
         <span>${esc(a.author_name)}</span>
+        ${isPM(state.user) && a.expires_at ? `<span style="color:var(--gray-400);font-size:.78rem">Expires ${fmtDate(a.expires_at)}</span>` : ''}
       </div>
     </div>`;
   }
@@ -125,6 +126,11 @@ route('new-announcement', async () => {
           <label class="form-check"><input type="checkbox" id="ann-urgent"> <span>Mark as Urgent 🚨</span></label>
           <label class="form-check"><input type="checkbox" id="ann-pinned"> <span>Pin to top 📌</span></label>
         </div>
+        <div class="form-group" style="margin-top:12px">
+          <label class="form-label">Auto-delete on (optional)</label>
+          <input type="datetime-local" class="form-input" id="ann-expires" style="max-width:260px">
+          <div class="form-hint">Leave blank for no expiry. The announcement is automatically deleted on this date.</div>
+        </div>
         <div style="display:flex;gap:10px;margin-top:18px">
           <button class="btn btn-secondary" onclick="navigate('announcements')">Cancel</button>
           <button class="btn btn-primary" onclick="submitAnnouncement()">Publish Announcement</button>
@@ -169,7 +175,8 @@ async function submitAnnouncement() {
 
   if (!title || !content) { toast('Title and content are required', 'warning'); return; }
 
-  const body = { title, content, target_type: target, urgent, pinned };
+  const expires = document.getElementById('ann-expires')?.value;
+  const body = { title, content, target_type: target, urgent, pinned, expires_at: expires || null };
   if (target === 'building') body.target_building = document.getElementById('ann-building')?.value;
   if (target === 'tenant') {
     body.target_tenant_id = document.getElementById('ann-tenant')?.value;
@@ -194,6 +201,11 @@ function showEditAnnModal(id) {
           <label class="form-check"><input type="checkbox" id="e-ann-urgent" ${ann.urgent?'checked':''}> <span>Urgent</span></label>
           <label class="form-check"><input type="checkbox" id="e-ann-pinned" ${ann.pinned?'checked':''}> <span>Pinned</span></label>
         </div>
+        <div class="form-group" style="margin-top:10px">
+          <label class="form-label">Auto-delete on (optional)</label>
+          <input type="datetime-local" class="form-input" id="e-ann-expires" value="${ann.expires_at ? ann.expires_at.slice(0,16) : ''}" style="max-width:260px">
+          <div class="form-hint">Clear this field to remove the expiry date.</div>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
@@ -207,8 +219,9 @@ async function saveAnnEdit(id) {
   const content = document.getElementById('e-ann-content')?.value.trim();
   const urgent  = document.getElementById('e-ann-urgent')?.checked;
   const pinned  = document.getElementById('e-ann-pinned')?.checked;
+  const expires = document.getElementById('e-ann-expires')?.value;
   try {
-    await apiFetch('PATCH', `/api/announcements/${id}`, { title, content, urgent, pinned });
+    await apiFetch('PATCH', `/api/announcements/${id}`, { title, content, urgent, pinned, expires_at: expires || '' });
     closeModal(); toast('Announcement updated', 'success'); navigate('announcements');
   } catch (e) { toast(e.message, 'error'); }
 }
