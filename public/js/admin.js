@@ -61,16 +61,30 @@ async function renderUsersTab(el) {
     </tr>`;
   }
 
+  window.filterAdminUsers = () => {
+    const q = (document.getElementById('user-search')?.value || '').toLowerCase();
+    const tbody = document.getElementById('users-tbody');
+    if (!tbody) return;
+    const filtered = q
+      ? (window._adminUsers || []).filter(u =>
+          u.name.toLowerCase().includes(q) || (u.tenant_name || '').toLowerCase().includes(q))
+      : (window._adminUsers || []);
+    tbody.innerHTML = filtered.map(userRow).join('');
+  };
+
   el.innerHTML = `
     <div class="card">
       <div class="card-header">
         <div class="card-title">${users.length} Users</div>
-        <button class="btn btn-primary btn-sm" onclick="showUserModal()">+ Add User</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="user-search" placeholder="Search by name or tenant…" style="width:220px" oninput="filterAdminUsers()">
+          <button class="btn btn-primary btn-sm" onclick="showUserModal()">+ Add User</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table class="data-table">
           <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Tenant</th><th>Status</th><th>Created</th><th></th></tr></thead>
-          <tbody>${users.map(userRow).join('')}</tbody>
+          <tbody id="users-tbody">${users.map(userRow).join('')}</tbody>
         </table>
       </div>
     </div>`;
@@ -199,10 +213,14 @@ async function renderTenantsTab(el) {
         <button class="btn btn-primary btn-sm" onclick="showTenantModal()">+ Add Tenant</button>
       </div>
       ${tenants.map(t => `
-        <div class="list-item">
+        <div class="list-item" ${!t.active ? 'style="opacity:.55"' : ''}>
           <div class="list-item-icon" style="background:var(--primary-light);color:var(--primary)">🏢</div>
           <div class="list-item-body">
-            <div class="list-item-title">${esc(t.name)} ${t.directory_hidden ? '<span class="badge badge-gray" style="font-size:.7rem">Hidden from Directory</span>' : ''}</div>
+            <div class="list-item-title">
+              ${esc(t.name)}
+              ${!t.active ? '<span class="badge badge-gray" style="font-size:.7rem">Inactive</span>' : ''}
+              ${t.directory_hidden ? '<span class="badge badge-gray" style="font-size:.7rem">Hidden from Directory</span>' : ''}
+            </div>
             <div class="list-item-meta">${buildingTag(t.building)} ${t.suite ? `· Suite ${esc(t.suite)}` : ''} · ${t.user_count||0} users</div>
           </div>
           <div style="display:flex;gap:6px">
@@ -237,6 +255,13 @@ function showTenantModal(id) {
         <div class="form-group" style="margin-top:4px">
           <label class="form-check"><input type="checkbox" id="t-dir-hidden" ${t.directory_hidden ? 'checked' : ''}> <span>Hide from Building Directory</span></label>
         </div>
+        ${editing ? `
+        <div class="form-group" style="margin-top:4px">
+          <label class="form-check"><input type="checkbox" id="t-active" ${t.active !== 0 ? 'checked' : ''} onchange="toggleTenantActiveFields()"> <span>Tenant Active</span></label>
+        </div>
+        <div id="t-cascade-group" style="margin-left:22px;margin-top:6px;${t.active !== 0 ? 'display:none' : ''}">
+          <label class="form-check"><input type="checkbox" id="t-cascade-users"> <span style="font-size:.875rem;color:var(--gray-600)">Also deactivate all user accounts for this tenant</span></label>
+        </div>` : ''}
       </div>
       <div class="modal-footer">
         ${editing ? `<button class="btn btn-danger" onclick="deleteTenant(${id})">Delete Tenant</button>` : ''}
@@ -255,6 +280,15 @@ async function deleteTenant(id) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
+function toggleTenantActiveFields() {
+  const active = document.getElementById('t-active')?.checked;
+  const group = document.getElementById('t-cascade-group');
+  if (group) group.style.display = active ? 'none' : 'block';
+  if (active && document.getElementById('t-cascade-users')) {
+    document.getElementById('t-cascade-users').checked = false;
+  }
+}
+
 async function saveTenant(id) {
   const body = {
     name:             document.getElementById('t-name')?.value.trim(),
@@ -264,6 +298,10 @@ async function saveTenant(id) {
     industry:         document.getElementById('t-industry')?.value || null,
     directory_hidden: document.getElementById('t-dir-hidden')?.checked ? 1 : 0,
   };
+  if (id) {
+    body.active        = document.getElementById('t-active')?.checked ? 1 : 0;
+    body.cascade_users = document.getElementById('t-cascade-users')?.checked || false;
+  }
   if (!body.name) { toast('Company name is required', 'warning'); return; }
   try {
     if (id) await apiFetch('PATCH', `/api/tenants/${id}`, body);

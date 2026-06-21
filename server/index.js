@@ -75,15 +75,36 @@ app.use('/api/categories',    require('./routes/categories'));
 app.use('/api/settings',      settingsRouter);
 app.use('/api/admin',         require('./routes/backup'));
 
-// Serve attachment files with auth check
+// Serve attachment files with auth + ownership check
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = require('./middleware/auth');
 app.get('/api/uploads/:filename', (req, res) => {
   const token = req.headers.authorization?.slice(7) || req.query.token;
   if (!token) return res.status(401).json({ error: 'Auth required' });
-  try { jwt.verify(token, JWT_SECRET); }
+  let decoded;
+  try { decoded = jwt.verify(token, JWT_SECRET); }
   catch { return res.status(401).json({ error: 'Invalid token' }); }
-  const filePath = path.join(uploadsDir, path.basename(req.params.filename));
+
+  const safeName = path.basename(req.params.filename);
+
+  // Re-check role from DB so a downgraded PM can't bypass tenant ownership checks
+  const user = db.prepare('SELECT role, tenant_id FROM users WHERE id = ? AND active = 1').get(decoded.id);
+  if (!user) return res.status(401).json({ error: 'Auth required' });
+  const isPMRole = ['pm_admin', 'pm_user'].includes(user.role);
+
+  if (!isPMRole) {
+    // Tenant users may only download attachments belonging to their own tenant's requests
+    const attachment = db.prepare(`
+      SELECT r.tenant_id FROM request_attachments a
+      JOIN service_requests r ON a.request_id = r.id
+      WHERE a.stored_name = ?
+    `).get(safeName);
+    if (attachment && attachment.tenant_id !== user.tenant_id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+  }
+
+  const filePath = path.join(uploadsDir, safeName);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
   res.sendFile(filePath);
 });

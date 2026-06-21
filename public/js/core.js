@@ -273,7 +273,10 @@ function renderSiteBanner(s) {
   banner.style.height = height + 'px';
   if (s.banner_link_url) {
     banner.style.cursor = 'pointer';
-    banner.onclick = () => window.open(s.banner_link_url, '_blank', 'noopener');
+    banner.onclick = () => {
+      const url = s.banner_link_url;
+      if (/^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener');
+    };
   }
   banner.innerHTML = inner + overlay;
 

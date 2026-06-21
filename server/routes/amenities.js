@@ -72,6 +72,8 @@ router.patch('/resources/:resId', requirePMAdmin, (req, res) => {
 
 // DELETE /api/amenities/resources/:resId — delete resource
 router.delete('/resources/:resId', requirePMAdmin, (req, res) => {
+  const r = db.prepare('SELECT id FROM amenity_resources WHERE id=?').get(req.params.resId);
+  if (!r) return res.status(404).json({ error: 'Resource not found' });
   db.prepare('DELETE FROM amenity_resources WHERE id=?').run(req.params.resId);
   res.json({ message: 'Deleted' });
 });

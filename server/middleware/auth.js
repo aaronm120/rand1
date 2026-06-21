@@ -24,10 +24,13 @@ function requireAuth(req, res, next) {
   } catch {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
-  // Confirm the account is still active — JWT alone doesn't reflect deactivation
-  const live = db.prepare('SELECT active FROM users WHERE id=?').get(req.user.id);
+  // Confirm the account is still active and role hasn't changed since the token was issued
+  const live = db.prepare('SELECT active, role FROM users WHERE id=?').get(req.user.id);
   if (!live || !live.active) {
     return res.status(401).json({ error: 'This account has been deactivated.' });
+  }
+  if (live.role !== req.user.role) {
+    return res.status(401).json({ error: 'Your session is outdated. Please sign in again.' });
   }
   next();
 }

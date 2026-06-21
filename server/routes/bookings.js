@@ -170,7 +170,7 @@ router.post('/', requireAuth, (req, res) => {
   const booking = bookingWithDetails(bookingId);
 
   // Email confirmation
-  const userPrefs = db.prepare('SELECT u.email, np.booking_confirmations FROM users u LEFT JOIN notification_prefs np ON np.user_id=u.id WHERE u.id=?').get(req.user.id);
+  const userPrefs = db.prepare('SELECT u.email, np.booking_confirmations FROM users u LEFT JOIN notification_prefs np ON np.user_id=u.id WHERE u.id=? AND u.active=1').get(req.user.id);
   if (userPrefs) notifyBookingConfirm(booking, userPrefs).catch(err => console.warn('[Email] Notification failed:', err.message));
 
   res.status(201).json(booking);

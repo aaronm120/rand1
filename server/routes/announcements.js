@@ -63,6 +63,11 @@ router.post('/', requirePM, (req, res) => {
   if (target_type === 'building' && !['728','730','732'].includes(target_building)) {
     return res.status(400).json({ error: 'Invalid building — must be 728, 730, or 732' });
   }
+  if (target_type === 'tenant') {
+    if (!target_tenant_id) return res.status(400).json({ error: 'A tenant must be selected for tenant-targeted announcements' });
+    const tenantExists = db.prepare('SELECT id FROM tenants WHERE id = ?').get(target_tenant_id);
+    if (!tenantExists) return res.status(400).json({ error: 'Tenant not found' });
+  }
 
   const publishDate = publish_at ? new Date(publish_at) : null;
   if (publishDate && isNaN(publishDate.getTime())) return res.status(400).json({ error: 'Invalid publish_at date' });

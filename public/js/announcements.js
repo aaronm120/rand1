@@ -211,7 +211,7 @@ function showEditAnnModal(id) {
         <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
         <button class="btn btn-primary" onclick="saveAnnEdit(${ann.id})">Save Changes</button>
       </div>`);
-  });
+  }).catch(e => toast(e.message, 'error'));
 }
 
 async function saveAnnEdit(id) {

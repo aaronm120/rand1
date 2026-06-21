@@ -53,7 +53,7 @@ router.patch('/:id', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'Access denied' });
   }
 
-  const { name, building, suite, active, directory_hidden } = req.body;
+  const { name, building, suite, active, directory_hidden, cascade_users } = req.body;
   const newBuilding = isPM(req.user) && building ? building : tenant.building;
   const newActive = isPM(req.user) && active !== undefined ? (active ? 1 : 0) : tenant.active;
   const newDirHidden = isPM(req.user) && directory_hidden !== undefined ? (directory_hidden ? 1 : 0) : (tenant.directory_hidden ?? 0);
@@ -61,7 +61,11 @@ router.patch('/:id', requireAuth, (req, res) => {
   db.prepare(`UPDATE tenants SET name=?, building=?, suite=?, active=?, directory_hidden=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
     .run(name?.trim() || tenant.name, newBuilding, suite ?? tenant.suite, newActive, newDirHidden, req.params.id);
 
-  auditLog(req.user.id, 'update_tenant', 'tenant', req.params.id, null, req.ip);
+  if (isPM(req.user) && newActive === 0 && cascade_users) {
+    db.prepare('UPDATE users SET active=0, updated_at=CURRENT_TIMESTAMP WHERE tenant_id=?').run(req.params.id);
+  }
+
+  auditLog(req.user.id, 'update_tenant', 'tenant', req.params.id, { active: newActive }, req.ip);
   res.json(db.prepare('SELECT * FROM tenants WHERE id=?').get(req.params.id));
 });
 

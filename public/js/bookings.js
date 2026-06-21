@@ -309,7 +309,7 @@ function loadAmenityResources() {
 
 function changeQty(resId, delta, max) {
   const cur = window._resourceQtys[resId] || 0;
-  const next = Math.min(Math.max(0, cur + delta), max || 999);
+  const next = Math.min(Math.max(0, cur + delta), max ?? 999);
   window._resourceQtys[resId] = next;
   const el = document.getElementById('qty-' + resId);
   if (el) el.textContent = next;

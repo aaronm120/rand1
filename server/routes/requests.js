@@ -190,7 +190,7 @@ router.post('/', requireAuth, upload.array('attachments', 5), (req, res) => {
   const submitter = !isPM(req.user) ? db.prepare(`
     SELECT u.email, np.request_updates FROM users u
     LEFT JOIN notification_prefs np ON np.user_id = u.id
-    WHERE u.id = ?
+    WHERE u.id = ? AND u.active = 1
   `).get(req.user.id) : null;
 
   notifyNewRequest(created, pmUsers, submitter).catch(err => console.warn('[Email] Notification failed:', err.message));
