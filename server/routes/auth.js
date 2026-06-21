@@ -1,14 +1,16 @@
 const express = require('express');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const bcrypt  = require('bcryptjs');
+const jwt     = require('jsonwebtoken');
+const crypto  = require('crypto');
 const { db, auditLog, getSettings } = require('../database');
 const { requireAuth, requirePMAdmin, isPM, JWT_SECRET } = require('../middleware/auth');
+const { sendPasswordResetEmail } = require('../lib/email');
 
 const router = express.Router();
 
 function makeToken(user) {
   return jwt.sign(
-    { id: user.id, email: user.email, role: user.role, tenant_id: user.tenant_id },
+    { id: user.id, email: user.email, role: user.role, tenant_id: user.tenant_id, token_version: user.token_version || 0 },
     JWT_SECRET, { expiresIn: '7d' }
   );
 }
@@ -47,6 +49,9 @@ router.post('/login', (req, res) => {
     }
   }
 
+  // Invalidate any outstanding password reset tokens now that user has authenticated
+  db.prepare('DELETE FROM password_reset_tokens WHERE user_id = ?').run(user.id);
+
   // Ensure notification prefs exist
   db.prepare('INSERT OR IGNORE INTO notification_prefs (user_id) VALUES (?)').run(user.id);
 
@@ -73,12 +78,18 @@ router.get('/me', requireAuth, (req, res) => {
 
 // PUT /api/auth/profile
 router.put('/profile', requireAuth, (req, res) => {
-  const { name, email, title, phone, directory_opt_out } = req.body;
+  const { name, email, title, phone, directory_opt_out, current_password } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Name is required' });
 
   const user = db.prepare('SELECT * FROM users WHERE id=?').get(req.user.id);
   const newEmail = email?.toLowerCase().trim() || user.email;
   if (newEmail !== user.email) {
+    if (!current_password) {
+      return res.status(400).json({ error: 'Your current password is required to change your email address' });
+    }
+    if (!bcrypt.compareSync(current_password, user.password_hash)) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
     const conflict = db.prepare('SELECT id FROM users WHERE email=? AND id!=?').get(newEmail, req.user.id);
     if (conflict) return res.status(409).json({ error: 'Email already in use' });
   }
@@ -101,10 +112,87 @@ router.put('/password', requireAuth, (req, res) => {
   if (!bcrypt.compareSync(current_password, user.password_hash)) {
     return res.status(401).json({ error: 'Current password is incorrect' });
   }
-  db.prepare('UPDATE users SET password_hash=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+  db.prepare('UPDATE users SET password_hash=?, token_version=token_version+1, updated_at=CURRENT_TIMESTAMP WHERE id=?')
     .run(bcrypt.hashSync(new_password, 10), req.user.id);
   auditLog(req.user.id, 'password_change', 'user', req.user.id, null, req.ip);
-  res.json({ message: 'Password updated' });
+  // Return a fresh token so this session stays valid after the version increment
+  const refreshed = db.prepare('SELECT * FROM users WHERE id=?').get(req.user.id);
+  res.json({ message: 'Password updated', token: makeToken(refreshed) });
+});
+
+// POST /api/auth/forgot-password
+router.post('/forgot-password', (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email is required' });
+
+  // Always return the same response to prevent email enumeration
+  const ok = () => res.json({ message: 'If that email is registered, a reset link has been sent.' });
+
+  const user = db.prepare('SELECT id, email, name, active FROM users WHERE email = ?')
+    .get(email.toLowerCase().trim());
+  if (!user || !user.active) return ok();
+
+  const plainToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash  = crypto.createHash('sha256').update(plainToken).digest('hex');
+  const expiresAt  = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
+
+  db.transaction(() => {
+    // Remove any previous unused tokens for this user, and purge globally expired ones
+    db.prepare(`DELETE FROM password_reset_tokens WHERE user_id = ? OR expires_at <= datetime('now')`).run(user.id);
+    db.prepare('INSERT INTO password_reset_tokens (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
+      .run(tokenHash, user.id, expiresAt);
+  })();
+
+  const baseUrl  = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+  const resetUrl = `${baseUrl}/?reset_token=${plainToken}`;
+
+  sendPasswordResetEmail(user, resetUrl)
+    .catch(err => console.warn('[Email] Password reset send failed:', err.message));
+
+  auditLog(null, 'password_reset_request', 'user', user.id, { email: user.email }, req.ip);
+  ok();
+});
+
+// GET /api/auth/verify-reset-token?token=xxx
+router.get('/verify-reset-token', (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).json({ error: 'Token is required' });
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const record = db.prepare(`
+    SELECT u.email FROM password_reset_tokens r
+    JOIN users u ON r.user_id = u.id
+    WHERE r.token_hash = ? AND r.used = 0 AND r.expires_at > datetime('now') AND u.active = 1
+  `).get(tokenHash);
+
+  if (!record) return res.status(400).json({ error: 'This reset link is invalid or has expired.' });
+  res.json({ email: record.email });
+});
+
+// POST /api/auth/reset-password
+router.post('/reset-password', (req, res) => {
+  const { token, new_password } = req.body;
+  if (!token || !new_password) return res.status(400).json({ error: 'Token and new password are required' });
+  if (new_password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const record = db.prepare(`
+    SELECT r.id, r.user_id, u.email, u.active FROM password_reset_tokens r
+    JOIN users u ON r.user_id = u.id
+    WHERE r.token_hash = ? AND r.used = 0 AND r.expires_at > datetime('now')
+  `).get(tokenHash);
+
+  if (!record) return res.status(400).json({ error: 'This reset link is invalid or has expired.' });
+  if (!record.active) return res.status(400).json({ error: 'This account has been deactivated. Contact building management.' });
+
+  db.transaction(() => {
+    db.prepare('UPDATE users SET password_hash = ?, token_version = token_version + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(bcrypt.hashSync(new_password, 10), record.user_id);
+    db.prepare('UPDATE password_reset_tokens SET used = 1 WHERE id = ?').run(record.id);
+  })();
+
+  auditLog(record.user_id, 'password_reset_complete', 'user', record.user_id, { email: record.email }, req.ip);
+  res.json({ message: 'Password reset successfully. You can now sign in.' });
 });
 
 // PUT /api/auth/notifications
@@ -192,10 +280,11 @@ router.put('/users/:id', requirePMAdmin, (req, res) => {
       req.params.id);
 
   if (password && password.length >= 8) {
-    db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(bcrypt.hashSync(password, 10), req.params.id);
+    db.prepare('UPDATE users SET password_hash=?, token_version=token_version+1, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+      .run(bcrypt.hashSync(password, 10), req.params.id);
   }
 
-  auditLog(req.user.id, 'update_user', 'user', req.params.id, { role }, req.ip);
+  auditLog(req.user.id, 'update_user', 'user', req.params.id, { role, password_changed: !!(password && password.length >= 8) }, req.ip);
   const updated = db.prepare(`
     SELECT u.*, t.name as tenant_name FROM users u LEFT JOIN tenants t ON u.tenant_id = t.id WHERE u.id = ?
   `).get(req.params.id);
@@ -219,6 +308,7 @@ router.post('/impersonate/:id', requirePMAdmin, (req, res) => {
 
   const token = jwt.sign(
     { id: target.id, email: target.email, role: target.role, tenant_id: target.tenant_id,
+      token_version: target.token_version || 0,
       impersonatedBy: req.user.id, impersonatedByName: req.user.name },
     JWT_SECRET, { expiresIn: '4h' }
   );

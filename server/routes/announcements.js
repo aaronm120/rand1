@@ -1,6 +1,6 @@
 const express = require('express');
 const { db, auditLog } = require('../database');
-const { requireAuth, requirePM, isPM } = require('../middleware/auth');
+const { requireAuth, requirePM, requirePMAdmin, isPM } = require('../middleware/auth');
 const { notifyAnnouncement } = require('../lib/email');
 
 const router = express.Router();
@@ -59,6 +59,8 @@ router.get('/:id', requireAuth, (req, res) => {
 router.post('/', requirePM, (req, res) => {
   const { title, content, target_type, target_building, target_tenant_id, urgent, pinned, publish_at, expires_at } = req.body;
   if (!title?.trim() || !content?.trim()) return res.status(400).json({ error: 'Title and content are required' });
+  if (title.trim().length > 300) return res.status(400).json({ error: 'Title must be 300 characters or fewer' });
+  if (content.trim().length > 10000) return res.status(400).json({ error: 'Content must be 10,000 characters or fewer' });
   if (!TARGET_TYPES.includes(target_type)) return res.status(400).json({ error: 'Invalid target type' });
   if (target_type === 'building' && !['728','730','732'].includes(target_building)) {
     return res.status(400).json({ error: 'Invalid building — must be 728, 730, or 732' });
@@ -132,8 +134,8 @@ router.patch('/:id', requirePM, (req, res) => {
   res.json(db.prepare('SELECT * FROM announcements WHERE id=?').get(req.params.id));
 });
 
-// DELETE /api/announcements/:id — PM only
-router.delete('/:id', requirePM, (req, res) => {
+// DELETE /api/announcements/:id — PM Admin only
+router.delete('/:id', requirePMAdmin, (req, res) => {
   const ann = db.prepare('SELECT id FROM announcements WHERE id=?').get(req.params.id);
   if (!ann) return res.status(404).json({ error: 'Not found' });
   db.prepare('DELETE FROM announcements WHERE id=?').run(req.params.id);

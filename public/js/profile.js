@@ -35,7 +35,11 @@ route('profile', async () => {
             </div>
             <div class="form-group">
               <label class="form-label">Email</label>
-              <input class="form-input" id="p-email" type="email" value="${esc(u.email||'')}">
+              <input class="form-input" id="p-email" type="email" value="${esc(u.email||'')}" oninput="toggleEmailPwField(this, '${esc(u.email||'')}')">
+            </div>
+            <div class="form-group" id="email-pw-group" style="display:none">
+              <label class="form-label required">Current Password <span style="font-size:.8rem;font-weight:400;color:var(--gray-500)">(required to change email)</span></label>
+              <input class="form-input" id="p-email-pw" type="password" autocomplete="current-password">
             </div>
             ${!isPM(u) ? `
               <div class="form-group">
@@ -120,19 +124,40 @@ route('profile', async () => {
   `);
 });
 
+function toggleEmailPwField(input, originalEmail) {
+  const changed = input.value.trim() !== originalEmail;
+  const group = document.getElementById('email-pw-group');
+  if (group) group.style.display = changed ? '' : 'none';
+  if (!changed) {
+    const pw = document.getElementById('p-email-pw');
+    if (pw) pw.value = '';
+  }
+}
+
 async function saveProfile() {
   const u = state.user;
+  const newEmail = document.getElementById('p-email')?.value.trim();
   const body = {
     name:               document.getElementById('p-name')?.value.trim(),
-    email:              document.getElementById('p-email')?.value.trim() || undefined,
+    email:              newEmail || undefined,
     title:              document.getElementById('p-title')?.value.trim() || null,
     phone:              document.getElementById('p-phone')?.value.trim() || null,
     directory_opt_out:  document.getElementById('p-optout')?.checked ? 1 : 0,
   };
   if (!body.name) { toast('Name is required', 'warning'); return; }
+  if (newEmail && newEmail !== u.email) {
+    const pw = document.getElementById('p-email-pw')?.value;
+    if (!pw) { toast('Enter your current password to change your email address', 'warning'); return; }
+    body.current_password = pw;
+  }
   try {
     const updated = await apiFetch('PUT', '/api/auth/profile', body);
     state.user = { ...state.user, ...updated };
+    // Reset the email password field after a successful save
+    const group = document.getElementById('email-pw-group');
+    const pw    = document.getElementById('p-email-pw');
+    if (group) group.style.display = 'none';
+    if (pw)    pw.value = '';
     toast('Profile saved', 'success');
     renderNav();
   } catch (e) { toast(e.message, 'error'); }
@@ -146,7 +171,12 @@ async function changePassword() {
   if (newPw !== confirm) { toast('New passwords do not match', 'warning'); return; }
   if (newPw.length < 8) { toast('Password must be at least 8 characters', 'warning'); return; }
   try {
-    await apiFetch('PUT', '/api/auth/password', { current_password: current, new_password: newPw });
+    const result = await apiFetch('PUT', '/api/auth/password', { current_password: current, new_password: newPw });
+    // Server returns a refreshed token with updated token_version — store it to stay logged in
+    if (result.token) {
+      state.token = result.token;
+      localStorage.setItem('roc_token', result.token);
+    }
     toast('Password updated', 'success');
     document.getElementById('pw-current').value = '';
     document.getElementById('pw-new').value = '';

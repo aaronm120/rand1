@@ -33,7 +33,7 @@ route('directory', async () => {
         <div class="directory-avatar" style="background:var(--primary-light);color:var(--primary)">📋</div>
         <div class="directory-person-info">
           <div class="directory-person-name">${esc(c.name)} <span style="font-size:.7rem;color:var(--gray-500)">Named Contact</span></div>
-          ${c.role_label ? `<div class="directory-person-meta">${esc(c.role_label)}</div>` : ''}
+          ${c.title ? `<div class="directory-person-meta">${esc(c.title)}</div>` : ''}
           ${c.email ? `<div class="directory-person-meta"><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></div>` : ''}
           ${c.phone ? `<div class="directory-person-meta"><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></div>` : ''}
         </div>
@@ -50,7 +50,7 @@ route('directory', async () => {
         </div>
         <div style="text-align:right">
           ${buildingTag(tenant.building)}
-          ${isPM(u) ? `<button class="btn btn-ghost btn-sm" onclick="navigate('tenant-detail',{id:${tenant.id}})">Details →</button>` : ''}
+          ${isPM(u) ? `<button class="btn btn-ghost btn-sm" onclick="navigate('admin')">Manage →</button>` : ''}
         </div>
       </div>
       ${allPeopleHtml ? `<div class="directory-people">${allPeopleHtml}</div>` : `<div style="font-size:.85rem;color:var(--gray-400);padding:12px 0">No listed contacts</div>`}
@@ -136,9 +136,9 @@ function renderDirTenantCard(tenant) {
         <div class="directory-avatar" style="background:var(--primary-light);color:var(--primary)">📋</div>
         <div class="directory-person-info">
           <div class="directory-person-name">${esc(c.name)} <span style="font-size:.7rem">Named Contact</span></div>
-          ${c.role_label?`<div class="directory-person-meta">${esc(c.role_label)}</div>`:''}
+          ${c.title?`<div class="directory-person-meta">${esc(c.title)}</div>`:''}
           ${c.email?`<div class="directory-person-meta"><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></div>`:''}
-          ${c.phone?`<div class="directory-person-meta">${esc(c.phone)}</div>`:''}
+          ${c.phone?`<div class="directory-person-meta"><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></div>`:''}
         </div>
       </div>`),
     ...visibleUsers.map(usr => `
@@ -148,7 +148,7 @@ function renderDirTenantCard(tenant) {
           <div class="directory-person-name">${esc(usr.name)}</div>
           ${usr.title?`<div class="directory-person-meta">${esc(usr.title)}</div>`:''}
           ${usr.email?`<div class="directory-person-meta"><a href="mailto:${esc(usr.email)}">${esc(usr.email)}</a></div>`:''}
-          ${usr.phone?`<div class="directory-person-meta">${esc(usr.phone)}</div>`:''}
+          ${usr.phone?`<div class="directory-person-meta"><a href="tel:${esc(usr.phone)}">${esc(usr.phone)}</a></div>`:''}
         </div>
       </div>`)];
 

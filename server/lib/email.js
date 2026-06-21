@@ -5,6 +5,13 @@ function esc(str) {
   return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function viewBtn(page, id) {
+  const base = (process.env.BASE_URL || '').replace(/\/$/, '');
+  if (!base) return '';
+  const href = id != null ? `${base}/?page=${page}&id=${id}` : `${base}/?page=${page}`;
+  return `<p style="margin:24px 0"><a href="${href}" style="background:#1B3A6B;color:#fff;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block">View in Portal &rarr;</a></p>`;
+}
+
 function isEmailEnabled(s) {
   return s.email_enabled === '1' || s.email_enabled === 1;
 }
@@ -53,7 +60,7 @@ async function notifyNewRequest(request, pmRecipients, submitter) {
         <tr><td style="padding:4px 8px;color:#666">Priority</td><td style="padding:4px 8px">${esc(request.priority)}</td></tr>
         <tr><td style="padding:4px 8px;color:#666">Description</td><td style="padding:4px 8px;white-space:pre-wrap">${esc(request.description)}</td></tr>
       </table>
-      <p style="color:#666;font-size:12px;margin-top:24px">Log in to the Randolph Office Center portal to manage this request.</p>
+      ${viewBtn('request-detail', request.id) || '<p style="color:#666;font-size:12px;margin-top:24px">Log in to the Randolph Office Center portal to manage this request.</p>'}
     </div>`;
 
   const confirmHtml = `
@@ -66,7 +73,7 @@ async function notifyNewRequest(request, pmRecipients, submitter) {
         <tr><td style="padding:4px 8px;color:#666">Priority</td><td style="padding:4px 8px">${esc(request.priority)}</td></tr>
         <tr><td style="padding:4px 8px;color:#666">Description</td><td style="padding:4px 8px;white-space:pre-wrap">${esc(request.description)}</td></tr>
       </table>
-      <p style="color:#666;font-size:12px;margin-top:24px">Log in to the Randolph Office Center portal to track your request.</p>
+      ${viewBtn('request-detail', request.id) || '<p style="color:#666;font-size:12px;margin-top:24px">Log in to the Randolph Office Center portal to track your request.</p>'}
     </div>`;
 
   for (const user of pmRecipients) {
@@ -94,7 +101,7 @@ async function notifyRequestStatus(request, newStatus, recipients) {
         <tr><td style="padding:4px 8px;color:#666">Description</td><td style="padding:4px 8px;white-space:pre-wrap">${esc(request.description)}</td></tr>
         <tr><td style="padding:4px 8px;color:#666">Priority</td><td style="padding:4px 8px">${esc(request.priority)}</td></tr>
       </table>
-      <p style="color:#666;font-size:12px;margin-top:24px">Log in to the Randolph Office Center portal to view details.</p>
+      ${viewBtn('request-detail', request.id) || '<p style="color:#666;font-size:12px;margin-top:24px">Log in to the Randolph Office Center portal to view details.</p>'}
     </div>`;
   for (const user of recipients) {
     if (user.request_updates) {
@@ -114,7 +121,7 @@ async function notifyBookingConfirm(booking, user) {
         <tr><td style="padding:4px 8px;color:#666">Time</td><td style="padding:4px 8px">${new Date(booking.start_time).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})} – ${new Date(booking.end_time).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}</td></tr>
         <tr><td style="padding:4px 8px;color:#666">Headcount</td><td style="padding:4px 8px">${booking.headcount}</td></tr>
       </table>
-      <p style="color:#666;font-size:12px;margin-top:24px">Log in to the portal to manage your booking.</p>
+      ${viewBtn('booking-detail', booking.id) || '<p style="color:#666;font-size:12px;margin-top:24px">Log in to the portal to manage your booking.</p>'}
     </div>`;
   await sendMail({ to: user.email, subject: `Booking Confirmed — ${booking.amenity_name}`, html });
 }
@@ -143,7 +150,7 @@ async function notifyAnnouncement(announcement, recipients) {
           <div>Posted by <strong>${esc(announcement.author_name)}</strong> &middot; ${esc(portalName)} Management</div>
           <div style="margin-top:4px">Sent to: ${esc(targetLabel)}</div>
         </div>
-        <p style="color:#9ca3af;font-size:.75rem;margin-top:16px">Log in to the ${esc(portalName)} tenant portal to view all announcements.</p>
+        ${viewBtn('announcement-detail', announcement.id) || `<p style="color:#9ca3af;font-size:.75rem;margin-top:16px">Log in to the ${esc(portalName)} tenant portal to view all announcements.</p>`}
       </div>
     </div>`;
 
@@ -176,7 +183,7 @@ async function notifyBookingCancelled(booking, cancelledByUserId) {
         <tr><td style="padding:4px 8px;color:#666">Time</td><td style="padding:4px 8px">${new Date(booking.start_time).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})} – ${new Date(booking.end_time).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}</td></tr>
       </table>
       <p>Please contact building management if you have questions.</p>
-      <p style="color:#666;font-size:12px;margin-top:24px">Log in to the portal to make a new booking.</p>
+      ${viewBtn('bookings') || '<p style="color:#666;font-size:12px;margin-top:24px">Log in to the portal to make a new booking.</p>'}
     </div>`;
   await sendMail({ to: userPrefs.email, subject: `Booking Cancelled — ${esc(booking.amenity_name)}`, html });
 }
@@ -195,7 +202,7 @@ async function notifyNewComment(request, comment, authorIsPM) {
         <div style="font-size:.8rem;color:#666;margin-bottom:4px">${esc(comment.author_name)} wrote:</div>
         <div style="white-space:pre-wrap;color:#333">${esc(comment.content)}</div>
       </div>
-      <p style="color:#666;font-size:12px;margin-top:24px">Log in to the Randolph Office Center portal to reply.</p>
+      ${viewBtn('request-detail', request.id) || '<p style="color:#666;font-size:12px;margin-top:24px">Log in to the Randolph Office Center portal to reply.</p>'}
     </div>`;
 
   if (authorIsPM) {
@@ -223,4 +230,32 @@ async function notifyNewComment(request, comment, authorIsPM) {
   }
 }
 
-module.exports = { sendMail, notifyNewRequest, notifyRequestStatus, notifyBookingConfirm, notifyBookingCancelled, notifyAnnouncement, notifyNewComment };
+async function sendPasswordResetEmail(user, resetUrl) {
+  const s = getSettings();
+  const portalName = s.building_name || 'Randolph Office Center';
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+      <div style="background:#1B3A6B;padding:16px 20px;border-radius:6px 6px 0 0">
+        <div style="color:#fff;font-size:1rem;font-weight:700">${esc(portalName)}</div>
+        <div style="color:#a8c4e0;font-size:.8rem;margin-top:2px">Password Reset Request</div>
+      </div>
+      <div style="border:1px solid #e5e7eb;border-top:none;padding:24px;border-radius:0 0 6px 6px">
+        <p style="margin-top:0">Hi ${esc(user.name)},</p>
+        <p>We received a request to reset the password for your ${esc(portalName)} tenant portal account.</p>
+        <p style="margin:24px 0">
+          <a href="${resetUrl}" style="background:#1B3A6B;color:#fff;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block">Reset My Password</a>
+        </p>
+        <p style="color:#6b7280;font-size:.85rem">This link expires in <strong>1 hour</strong>. If you did not request a password reset, you can safely ignore this email — your password will not change.</p>
+        <p style="color:#6b7280;font-size:.85rem">If the button above doesn't work, paste this link into your browser:<br>
+          <span style="word-break:break-all;color:#1B3A6B">${esc(resetUrl)}</span></p>
+        <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:.8rem;color:#9ca3af">
+          ${esc(portalName)} · Tenant Portal
+        </div>
+      </div>
+    </div>`;
+
+  await sendMail({ to: user.email, subject: `Reset your password — ${portalName}`, html });
+}
+
+module.exports = { sendMail, notifyNewRequest, notifyRequestStatus, notifyBookingConfirm, notifyBookingCancelled, notifyAnnouncement, notifyNewComment, sendPasswordResetEmail };

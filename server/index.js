@@ -27,7 +27,11 @@ const settingsStorage = multer.diskStorage({
 const settingsUpload = multer({
   storage: settingsStorage,
   limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => cb(null, /\.(jpe?g|png|gif|webp|svg)$/i.test(file.originalname)),
+  fileFilter: (req, file, cb) => {
+    const okExt  = /\.(jpe?g|png|webp)$/i.test(file.originalname);
+    const okMime = /^image\/(jpeg|png|webp)$/.test(file.mimetype);
+    cb(null, okExt && okMime);
+  },
 });
 
 // ── Middleware ────────────────────────────────────────────────────────────────
@@ -48,6 +52,22 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
 });
+
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many password reset requests. Please try again in 15 minutes.' },
+});
+
+const passwordChangeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many password change attempts. Please try again in 15 minutes.' },
+});
 app.use(express.static(path.join(__dirname, '../public')));
 
 // Serve uploaded files (attachment downloads require auth — handled via /api/uploads route)
@@ -63,6 +83,8 @@ app.post('/api/settings/upload', settingsUpload.single('image'), (req, res, next
 });
 
 app.post('/api/auth/login', loginLimiter);
+app.post('/api/auth/forgot-password', forgotPasswordLimiter);
+app.put('/api/auth/password', passwordChangeLimiter);
 app.use('/api/auth',          require('./routes/auth'));
 app.use('/api/requests',      require('./routes/requests'));
 app.use('/api/announcements', require('./routes/announcements'));
@@ -87,9 +109,13 @@ app.get('/api/uploads/:filename', (req, res) => {
 
   const safeName = path.basename(req.params.filename);
 
-  // Re-check role from DB so a downgraded PM can't bypass tenant ownership checks
-  const user = db.prepare('SELECT role, tenant_id FROM users WHERE id = ? AND active = 1').get(decoded.id);
+  // Re-check role/status from DB so a downgraded PM can't bypass tenant ownership checks,
+  // and validate token_version so password resets immediately revoke file access too.
+  const user = db.prepare('SELECT role, tenant_id, token_version FROM users WHERE id = ? AND active = 1').get(decoded.id);
   if (!user) return res.status(401).json({ error: 'Auth required' });
+  if ((user.token_version || 0) !== (decoded.token_version || 0)) {
+    return res.status(401).json({ error: 'Session expired' });
+  }
   const isPMRole = ['pm_admin', 'pm_user'].includes(user.role);
 
   if (!isPMRole) {
@@ -113,9 +139,11 @@ app.get('/api/uploads/:filename', (req, res) => {
 const { requirePMAdmin } = require('./middleware/auth');
 const { db } = require('./database');
 app.get('/api/audit', requirePMAdmin, (req, res) => {
-  const { entity, limit = 100, offset = 0 } = req.query;
+  const { entity } = req.query;
+  const safeLimit  = Math.min(Math.max(1, parseInt(req.query.limit) || 100), 500);
+  const safeOffset = Math.max(0, parseInt(req.query.offset) || 0);
   const where = entity ? 'WHERE a.entity = ?' : '';
-  const params = entity ? [entity, parseInt(limit), parseInt(offset)] : [parseInt(limit), parseInt(offset)];
+  const params = entity ? [entity, safeLimit, safeOffset] : [safeLimit, safeOffset];
   const logs = db.prepare(`
     SELECT a.*, u.name as user_name, u.email as user_email
     FROM audit_logs a LEFT JOIN users u ON a.user_id = u.id

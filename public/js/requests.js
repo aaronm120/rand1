@@ -340,7 +340,7 @@ route('request-detail', async ({ id }) => {
 });
 
 function renderComments(comments, currentUser) {
-  if (!comments.length) return '<div style="font-size:.85rem;color:var(--gray-400)">No comments yet. Add one below to start the conversation.</div>';
+  if (!comments.length) return '<div data-empty="1" style="font-size:.85rem;color:var(--gray-400)">No comments yet. Add one below to start the conversation.</div>';
   return comments.map(c => {
     const isMe = c.author_id === currentUser?.id;
     const isPMAuthor = c.author_role === 'pm_admin' || c.author_role === 'pm_user';
@@ -399,12 +399,14 @@ async function closeRequest(reqId) {
 async function addComment(reqId) {
   const content = document.getElementById('new-comment')?.value.trim();
   if (!content) { toast('Comment cannot be empty', 'warning'); return; }
+  const btn = document.querySelector(`button[onclick="addComment(${reqId})"]`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
   try {
     const comment = await apiFetch('POST', `/api/requests/${reqId}/comments`, { content });
     document.getElementById('new-comment').value = '';
     const list = document.getElementById('comments-list');
     if (list) {
-      const emptyMsg = list.querySelector('[style*="No comments"]');
+      const emptyMsg = list.querySelector('[data-empty]');
       if (emptyMsg) emptyMsg.remove();
       const isPMAuthor = comment.author_role === 'pm_admin' || comment.author_role === 'pm_user';
       const bubbleBg = isPMAuthor ? 'var(--primary)' : 'var(--gray-100)';
@@ -419,8 +421,12 @@ async function addComment(reqId) {
       list.appendChild(div);
       list.scrollTop = list.scrollHeight;
     }
+    if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
     toast('Comment added', 'success');
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
+    toast(e.message, 'error');
+  }
 }
 
 async function addNote(reqId) {

@@ -296,6 +296,16 @@ function initializeDatabase() {
       key   TEXT PRIMARY KEY,
       value TEXT
     );
+
+    -- ── Password reset tokens ─────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      token_hash TEXT UNIQUE NOT NULL,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at DATETIME NOT NULL,
+      used       INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // ── Indexes ───────────────────────────────────────────────────────────────
@@ -311,10 +321,12 @@ function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_announcements_target   ON announcements(target_type, target_building);
     CREATE INDEX IF NOT EXISTS idx_comments_request_id    ON service_request_comments(request_id);
     CREATE INDEX IF NOT EXISTS idx_audit_entity           ON audit_logs(entity, entity_id);
+    CREATE INDEX IF NOT EXISTS idx_reset_tokens_user      ON password_reset_tokens(user_id);
   `);
 
   // ── Migrations ────────────────────────────────────────────────────────────
   try { db.exec('ALTER TABLE users ADD COLUMN door_code TEXT'); } catch (_) {}
+  try { db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0'); } catch (_) {}
   try { db.exec('ALTER TABLE leases ADD COLUMN sq_footage REAL'); } catch (_) {}
   try { db.exec('ALTER TABLE leases ADD COLUMN security_deposit REAL'); } catch (_) {}
   try { db.exec('ALTER TABLE leases ADD COLUMN lease_type TEXT'); } catch (_) {}

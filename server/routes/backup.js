@@ -88,9 +88,14 @@ router.post('/restore', requirePMAdmin, restoreUpload.single('backup'), async (r
       if (fs.existsSync(pendingUploads)) fs.rmSync(pendingUploads, { recursive: true, force: true });
       fs.mkdirSync(pendingUploads, { recursive: true });
 
+      const pendingResolved = path.resolve(pendingUploads);
       await Promise.all(uploadEntries.map(f => new Promise((resolve, reject) => {
         const relPath = f.path.slice('uploads/'.length);
         const outPath = path.join(pendingUploads, relPath);
+        // Guard against path traversal (e.g. uploads/../../etc/cron.d/evil)
+        if (!path.resolve(outPath).startsWith(pendingResolved + path.sep)) {
+          return reject(new Error(`Invalid path in archive: ${f.path}`));
+        }
         fs.mkdirSync(path.dirname(outPath), { recursive: true });
         f.stream().pipe(fs.createWriteStream(outPath))
           .on('finish', resolve).on('error', reject);

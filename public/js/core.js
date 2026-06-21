@@ -77,6 +77,8 @@ async function apiFetch(method, url, body, isFormData) {
     body: body ? (isFormData ? body : JSON.stringify(body)) : undefined,
   });
 
+  const data = await res.json().catch(() => ({}));
+
   if (res.status === 401) {
     if (state.token) {
       // Mid-session expiry — clear everything and redirect to login
@@ -84,13 +86,12 @@ async function apiFetch(method, url, body, isFormData) {
       localStorage.removeItem('roc_token');
       localStorage.removeItem('roc_admin_token');
       showAuth('login');
-      throw new Error('Session expired — please sign in again');
+      throw new Error(data.error || 'Session expired — please sign in again');
     }
-    // Login attempt with bad credentials — just throw the server's message
+    // Login attempt with bad credentials — throw the server's message
     throw new Error(data.error || 'Authentication failed');
   }
 
-  const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
 }
@@ -335,7 +336,21 @@ async function exitImpersonation() {
 function showAuth(mode) {
   document.getElementById('app-shell').classList.add('hidden');
   document.getElementById('maintenance-screen').classList.add('hidden');
-  document.getElementById('auth-screen').classList.remove('hidden');
+  const authScreen = document.getElementById('auth-screen');
+  authScreen.classList.remove('hidden');
+
+  const imgPanel   = document.getElementById('auth-image-panel');
+  const loginImage = state.settings?.login_image;
+  if (loginImage && imgPanel) {
+    imgPanel.style.backgroundImage = `url("${loginImage.replace(/"/g, '%22')}")`;
+    imgPanel.style.display = '';
+    authScreen.classList.add('auth-split');
+  } else if (imgPanel) {
+    imgPanel.style.backgroundImage = '';
+    imgPanel.style.display = 'none';
+    authScreen.classList.remove('auth-split');
+  }
+
   renderAuthCard(mode);
 }
 
@@ -367,7 +382,15 @@ function showApp() {
   renderImpersonationBanner();
   renderSiteBanner(state.settings);
   renderNav();
-  navigate('dashboard');
+  const params  = new URLSearchParams(window.location.search);
+  const dlPage  = params.get('page');
+  const dlId    = params.get('id');
+  if (dlPage && ROUTES[dlPage]) {
+    history.replaceState(null, '', '/');
+    navigate(dlPage, dlId ? { id: parseInt(dlId, 10) } : {});
+  } else {
+    navigate('dashboard');
+  }
 }
 
 function signOut() {

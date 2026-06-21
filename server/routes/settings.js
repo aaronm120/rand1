@@ -14,6 +14,7 @@ const PUBLIC_KEYS = [
   'primary_color', 'primary_light', 'primary_dark', 'accent_color',
   'bg_color', 'sidebar_bg', 'font_family', 'theme_preset',
   'logo_type', 'logo_url',
+  'login_image',
   'banner_enabled', 'banner_image_url', 'banner_title', 'banner_subtitle', 'banner_link_url', 'banner_height',
   'email_enabled', 'maintenance_mode', 'maintenance_message',
 ];
@@ -39,6 +40,7 @@ router.put('/', requirePMAdmin, (req, res) => {
     'primary_color', 'primary_light', 'primary_dark', 'accent_color',
     'bg_color', 'sidebar_bg', 'font_family', 'theme_preset',
     'logo_type', 'logo_url',
+    'login_image',
     'banner_enabled', 'banner_image_url', 'banner_title', 'banner_subtitle', 'banner_link_url', 'banner_height',
     'smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'email_enabled',
     'maintenance_mode', 'maintenance_message',

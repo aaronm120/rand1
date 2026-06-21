@@ -49,8 +49,8 @@ router.patch('/:id', requireAuth, (req, res) => {
   const tenant = db.prepare('SELECT * FROM tenants WHERE id=?').get(req.params.id);
   if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
 
-  if (!isPM(req.user) && req.user.tenant_id !== tenant.id) {
-    return res.status(403).json({ error: 'Access denied' });
+  if (!isPM(req.user) && !(isTenantAdmin(req.user) && req.user.tenant_id === tenant.id)) {
+    return res.status(403).json({ error: 'Tenant admin access required' });
   }
 
   const { name, building, suite, active, directory_hidden, cascade_users } = req.body;
@@ -75,7 +75,9 @@ router.patch('/:id', requireAuth, (req, res) => {
 router.post('/:id/contacts', requireAuth, (req, res) => {
   const tenant = db.prepare('SELECT * FROM tenants WHERE id=?').get(req.params.id);
   if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
-  if (!isPM(req.user) && req.user.tenant_id !== tenant.id) return res.status(403).json({ error: 'Access denied' });
+  if (!isPM(req.user) && !(isTenantAdmin(req.user) && req.user.tenant_id === tenant.id)) {
+    return res.status(403).json({ error: 'Tenant admin access required' });
+  }
 
   const { name, title, email, phone, is_primary } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Contact name required' });
@@ -93,7 +95,9 @@ router.post('/:id/contacts', requireAuth, (req, res) => {
 router.patch('/contacts/:contactId', requireAuth, (req, res) => {
   const contact = db.prepare('SELECT * FROM tenant_contacts WHERE id=?').get(req.params.contactId);
   if (!contact) return res.status(404).json({ error: 'Contact not found' });
-  if (!isPM(req.user) && req.user.tenant_id !== contact.tenant_id) return res.status(403).json({ error: 'Access denied' });
+  if (!isPM(req.user) && !(isTenantAdmin(req.user) && req.user.tenant_id === contact.tenant_id)) {
+    return res.status(403).json({ error: 'Tenant admin access required' });
+  }
 
   const { name, title, email, phone, is_primary } = req.body;
   if (is_primary) {
@@ -132,7 +136,9 @@ router.delete('/:id', requirePMAdmin, (req, res) => {
 router.delete('/contacts/:contactId', requireAuth, (req, res) => {
   const contact = db.prepare('SELECT * FROM tenant_contacts WHERE id=?').get(req.params.contactId);
   if (!contact) return res.status(404).json({ error: 'Not found' });
-  if (!isPM(req.user) && req.user.tenant_id !== contact.tenant_id) return res.status(403).json({ error: 'Access denied' });
+  if (!isPM(req.user) && !(isTenantAdmin(req.user) && req.user.tenant_id === contact.tenant_id)) {
+    return res.status(403).json({ error: 'Tenant admin access required' });
+  }
   db.prepare('DELETE FROM tenant_contacts WHERE id=?').run(req.params.contactId);
   res.json({ message: 'Deleted' });
 });

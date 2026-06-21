@@ -1,12 +1,12 @@
 const express = require('express');
 const { db, auditLog } = require('../database');
-const { requireAuth, requirePMAdmin, requirePM } = require('../middleware/auth');
+const { requireAuth, requirePMAdmin, requirePM, isPM } = require('../middleware/auth');
 
 const router = express.Router();
 
 // GET /api/amenities — list active amenities (all authenticated users)
 router.get('/', requireAuth, (req, res) => {
-  const showAll = req.query.all === 'true';
+  const showAll = req.query.all === 'true' && isPM(req.user);
   const where = showAll ? '' : 'WHERE active = 1';
   const amenities = db.prepare(`SELECT * FROM amenities ${where} ORDER BY name`).all();
   for (const a of amenities) {

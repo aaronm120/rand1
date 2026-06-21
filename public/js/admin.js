@@ -627,6 +627,23 @@ async function renderSettingsTab(el) {
             </div>
           </div>
         </div>
+        <div style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-500);margin-top:28px;margin-bottom:12px">Login Screen</div>
+        <div class="form-group">
+          <label class="form-label">Login Screen Image</label>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <input class="form-input" id="s-login-image-url" value="${esc(s.login_image||'')}" placeholder="https://… or upload below" style="flex:1;min-width:200px">
+            <label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0">
+              Upload Image
+              <input type="file" accept="image/*" style="display:none" onchange="uploadLoginImage(this)">
+            </label>
+            ${s.login_image ? `<button class="btn btn-ghost btn-sm" onclick="clearLoginImage()" type="button">Remove</button>` : ''}
+          </div>
+          <div class="form-hint">Shown as a full-height side panel on the login screen on larger screens. Recommended: tall portrait or square image, 800×1200px+.</div>
+          <div id="login-image-preview" style="margin-top:10px;${s.login_image?'':'display:none'}">
+            <img id="login-image-preview-img" src="${esc(s.login_image||'')}" alt="Login image preview"
+              style="max-height:160px;max-width:100%;object-fit:cover;border-radius:8px;border:1px solid var(--gray-200)">
+          </div>
+        </div>
         <div style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-500);margin-top:20px;margin-bottom:12px">Email (SMTP)</div>
         <div class="form-row">
           <div class="form-group"><label class="form-label">SMTP Host</label><input class="form-input" id="s-smtp-host" value="${esc(s.smtp_host||'')}" placeholder="smtp.example.com"></div>
@@ -713,6 +730,38 @@ async function uploadBannerImage(input) {
     toast('Image uploaded', 'success');
   } catch (e) { toast(e.message, 'error'); }
   finally { btn.childNodes[0].textContent = origText; input.value = ''; }
+}
+
+async function uploadLoginImage(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const btn = input.closest('label');
+  const origText = btn.childNodes[0].textContent;
+  btn.childNodes[0].textContent = 'Uploading…';
+  try {
+    const fd = new FormData();
+    fd.append('image', file);
+    const res = await fetch('/api/settings/upload', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + state.token },
+      body: fd,
+    });
+    if (!res.ok) throw new Error('Upload failed');
+    const { url } = await res.json();
+    document.getElementById('s-login-image-url').value = url;
+    const preview = document.getElementById('login-image-preview');
+    const img     = document.getElementById('login-image-preview-img');
+    if (preview && img) { img.src = url; preview.style.display = ''; }
+    toast('Image uploaded', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+  finally { btn.childNodes[0].textContent = origText; input.value = ''; }
+}
+
+function clearLoginImage() {
+  const urlInput = document.getElementById('s-login-image-url');
+  const preview  = document.getElementById('login-image-preview');
+  if (urlInput) urlInput.value = '';
+  if (preview)  preview.style.display = 'none';
 }
 
 // ── BACKUP & RESTORE ───────────────────────────────────────────────
@@ -832,6 +881,7 @@ async function saveSettings() {
     email_enabled:        document.getElementById('s-email-enabled')?.checked ? '1' : '0',
     maintenance_mode:     document.getElementById('s-maint-mode')?.checked ? '1' : '0',
     maintenance_message:  document.getElementById('s-maint-msg')?.value || undefined,
+    login_image:      document.getElementById('s-login-image-url')?.value || '',
     banner_enabled:       document.getElementById('s-banner-enabled')?.checked ? '1' : '0',
     banner_image_url: document.getElementById('s-banner-url')?.value || '',
     banner_title:     document.getElementById('s-banner-title')?.value || '',

@@ -126,6 +126,9 @@ router.post('/', requireAuth, upload.array('attachments', 5), (req, res) => {
   if (!category_id || !description?.trim()) {
     return res.status(400).json({ error: 'Category and description are required' });
   }
+  if (description.trim().length > 5000) {
+    return res.status(400).json({ error: 'Description must be 5,000 characters or fewer' });
+  }
 
   // PM can create on behalf of a tenant
   let tenantId, submittedById, createdByPMId;
@@ -257,6 +260,7 @@ router.patch('/:id/priority', requirePM, (req, res) => {
 router.post('/:id/notes', requirePM, (req, res) => {
   const { content } = req.body;
   if (!content?.trim()) return res.status(400).json({ error: 'Note content is required' });
+  if (content.trim().length > 5000) return res.status(400).json({ error: 'Note must be 5,000 characters or fewer' });
   const req_ = db.prepare('SELECT id FROM service_requests WHERE id=?').get(req.params.id);
   if (!req_) return res.status(404).json({ error: 'Request not found' });
   const result = db.prepare(`INSERT INTO request_notes (request_id, author_id, content) VALUES (?, ?, ?)`)
@@ -271,6 +275,7 @@ router.post('/:id/notes', requirePM, (req, res) => {
 router.post('/:id/comments', requireAuth, (req, res) => {
   const { content } = req.body;
   if (!content?.trim()) return res.status(400).json({ error: 'Comment cannot be empty' });
+  if (content.trim().length > 5000) return res.status(400).json({ error: 'Comment must be 5,000 characters or fewer' });
   const req_ = db.prepare('SELECT * FROM service_requests WHERE id=?').get(req.params.id);
   if (!req_) return res.status(404).json({ error: 'Request not found' });
   if (!isPM(req.user) && req_.tenant_id !== req.user.tenant_id) return res.status(403).json({ error: 'Access denied' });

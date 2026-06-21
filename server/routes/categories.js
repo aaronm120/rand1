@@ -1,12 +1,12 @@
 const express = require('express');
 const { db, auditLog } = require('../database');
-const { requireAuth, requirePMAdmin } = require('../middleware/auth');
+const { requireAuth, requirePMAdmin, isPM } = require('../middleware/auth');
 
 const router = express.Router();
 
 // GET /api/categories — all authenticated users
 router.get('/', requireAuth, (req, res) => {
-  const showAll = req.query.all === 'true';
+  const showAll = req.query.all === 'true' && isPM(req.user);
   const where = showAll ? '' : 'WHERE active = 1';
   res.json(db.prepare(`SELECT * FROM request_categories ${where} ORDER BY sort_order, name`).all());
 });

@@ -205,7 +205,7 @@ router.get('/blackouts/list', requirePM, (req, res) => {
   res.json(rows);
 });
 
-router.post('/blackouts', requirePM, (req, res) => {
+router.post('/blackouts', requirePMAdmin, (req, res) => {
   const { amenity_id, start_time, end_time, reason } = req.body;
   if (!amenity_id || !start_time || !end_time) return res.status(400).json({ error: 'amenity_id, start_time, end_time required' });
   const result = db.prepare(`INSERT INTO blackouts (amenity_id, start_time, end_time, reason, created_by_id) VALUES (?, ?, ?, ?, ?)`)
@@ -214,7 +214,7 @@ router.post('/blackouts', requirePM, (req, res) => {
   res.status(201).json(db.prepare('SELECT * FROM blackouts WHERE id=?').get(result.lastInsertRowid));
 });
 
-router.delete('/blackouts/:id', requirePM, (req, res) => {
+router.delete('/blackouts/:id', requirePMAdmin, (req, res) => {
   const row = db.prepare('SELECT id FROM blackouts WHERE id=?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
   db.prepare('DELETE FROM blackouts WHERE id=?').run(req.params.id);

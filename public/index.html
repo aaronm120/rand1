@@ -25,6 +25,7 @@
 
 <!-- Auth screen -->
 <div id="auth-screen" class="auth-screen hidden">
+  <div id="auth-image-panel" class="auth-image-panel"></div>
   <div class="auth-card-wrap">
     <div class="auth-brand">
       <div class="auth-brand-icon" id="auth-brand-icon">🏢</div>
@@ -85,12 +86,19 @@
 <script src="/js/profile.js"></script>
 <script>
 (async function boot() {
+  // Load settings and theme before showing anything
   try {
     const settings = await apiFetch('GET', '/api/settings');
     state.settings = settings;
     applyTheme(settings);
     updateBranding(settings);
   } catch(_) {}
+
+  // Password reset link takes priority over everything else
+  if (new URLSearchParams(window.location.search).has('reset_token')) {
+    showAuth('reset');
+    return;
+  }
 
   const maintenance = state.settings.maintenance_mode === '1' || state.settings.maintenance_mode === 'true';
 
