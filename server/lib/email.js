@@ -120,16 +120,40 @@ async function notifyBookingConfirm(booking, user) {
 }
 
 async function notifyAnnouncement(announcement, recipients) {
+  const s = getSettings();
+  const portalName = s.building_name || 'Randolph Office Center';
+
+  const targetLabel = announcement.target_type === 'building'
+    ? `${announcement.target_building} W. Randolph St.`
+    : announcement.target_type === 'tenant'
+    ? 'Your company'
+    : 'All buildings';
+
   const html = `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
-      ${announcement.urgent ? '<div style="background:#dc2626;color:white;padding:8px 12px;border-radius:4px;margin-bottom:12px"><strong>URGENT</strong></div>' : ''}
-      <h2 style="color:#1B3A6B">${esc(announcement.title)}</h2>
-      <div style="white-space:pre-wrap;color:#333">${esc(announcement.content)}</div>
-      <p style="color:#666;font-size:12px;margin-top:24px">Log in to the portal to view all announcements.</p>
+      <div style="background:#1B3A6B;padding:16px 20px;border-radius:6px 6px 0 0">
+        <div style="color:#fff;font-size:1rem;font-weight:700">${esc(portalName)}</div>
+        <div style="color:#a8c4e0;font-size:.8rem;margin-top:2px">Building Announcement</div>
+      </div>
+      <div style="border:1px solid #e5e7eb;border-top:none;padding:24px;border-radius:0 0 6px 6px">
+        ${announcement.urgent ? '<div style="background:#dc2626;color:white;padding:10px 14px;border-radius:4px;margin-bottom:16px;font-weight:600">&#9888; URGENT NOTICE</div>' : ''}
+        <h2 style="color:#1B3A6B;margin-top:0">${esc(announcement.title)}</h2>
+        <div style="white-space:pre-wrap;color:#333;line-height:1.6">${esc(announcement.content)}</div>
+        <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:.85rem;color:#6b7280">
+          <div>Posted by <strong>${esc(announcement.author_name)}</strong> &middot; ${esc(portalName)} Management</div>
+          <div style="margin-top:4px">Sent to: ${esc(targetLabel)}</div>
+        </div>
+        <p style="color:#9ca3af;font-size:.75rem;margin-top:16px">Log in to the ${esc(portalName)} tenant portal to view all announcements.</p>
+      </div>
     </div>`;
+
   for (const user of recipients) {
     if (user.announcements) {
-      await sendMail({ to: user.email, subject: `${announcement.urgent ? '[URGENT] ' : ''}${announcement.title}`, html });
+      await sendMail({
+        to: user.email,
+        subject: `${announcement.urgent ? '[URGENT] ' : ''}${esc(announcement.title)} — ${portalName}`,
+        html,
+      });
     }
   }
 }
