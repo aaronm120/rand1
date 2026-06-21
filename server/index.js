@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
@@ -29,8 +31,23 @@ const settingsUpload = multer({
 });
 
 // ── Middleware ────────────────────────────────────────────────────────────────
-app.use(cors());
-app.use(express.json());
+app.use(cors({
+  origin: process.env.CLIENT_URL || (process.env.NODE_ENV === 'production' ? false : `http://localhost:${process.env.PORT || 3000}`),
+  credentials: true,
+}));
+app.use(helmet({
+  // Allow inline scripts/styles used by the SPA
+  contentSecurityPolicy: false,
+}));
+app.use(express.json({ limit: '1mb' }));
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
+});
 app.use(express.static(path.join(__dirname, '../public')));
 
 // Serve uploaded files (attachment downloads require auth — handled via /api/uploads route)
@@ -45,6 +62,7 @@ app.post('/api/settings/upload', settingsUpload.single('image'), (req, res, next
   settingsRouter.handle(req, res, next);
 });
 
+app.post('/api/auth/login', loginLimiter);
 app.use('/api/auth',          require('./routes/auth'));
 app.use('/api/requests',      require('./routes/requests'));
 app.use('/api/announcements', require('./routes/announcements'));
@@ -93,17 +111,22 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
+// Global error handler — must be registered after all routes
+app.use((err, req, res, next) => {
+  console.error('[Error]', req.method, req.path, err);
+  if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
+});
+
+process.on('unhandledRejection', (reason) => { console.error('[Unhandled Rejection]', reason); });
+process.on('uncaughtException', (err) => { console.error('[Uncaught Exception]', err); process.exit(1); });
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 initializeDatabase();
 app.listen(PORT, () => {
-  console.log(`\n╔═══════════════════════════════════════════════════╗`);
-  console.log(`║   Randolph Office Center Portal                   ║`);
-  console.log(`║   http://localhost:${PORT}                            ║`);
-  console.log(`╠═══════════════════════════════════════════════════╣`);
-  console.log(`║   PM Admin:  admin@randolphofficecenter.com       ║`);
-  console.log(`║              Admin123!                            ║`);
-  console.log(`║   PM Staff:  staff@randolphofficecenter.com       ║`);
-  console.log(`║              Staff123!                            ║`);
-  console.log(`║   Tenant:    admin@acmecorp.com  /  Tenant123!    ║`);
-  console.log(`╚═══════════════════════════════════════════════════╝\n`);
+  console.log(`Randolph Office Center Portal — http://localhost:${PORT}`);
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('  PM Admin : admin@randolphofficecenter.com / Admin123!');
+    console.log('  PM Staff : staff@randolphofficecenter.com / Staff123!');
+    console.log('  Tenant   : admin@acmecorp.com / Tenant123!');
+  }
 });

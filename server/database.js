@@ -35,6 +35,8 @@ if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 const db = new Database(path.join(dataDir, 'portal.db'));
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+db.pragma('busy_timeout = 5000');
+db.pragma('wal_autocheckpoint = 1000');
 
 // ─── DEFAULT SETTINGS ────────────────────────────────────────────────────────
 
@@ -142,6 +144,15 @@ function initializeDatabase() {
       created_by_pm_id INTEGER REFERENCES users(id),
       created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- ── Shared comments (tenant ↔ PM) ────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS service_request_comments (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id INTEGER NOT NULL REFERENCES service_requests(id) ON DELETE CASCADE,
+      author_id  INTEGER NOT NULL REFERENCES users(id),
+      content    TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
     -- ── PM-only internal notes ────────────────────────────────────────────────
@@ -285,6 +296,21 @@ function initializeDatabase() {
       key   TEXT PRIMARY KEY,
       value TEXT
     );
+  `);
+
+  // ── Indexes ───────────────────────────────────────────────────────────────
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_users_email           ON users(email);
+    CREATE INDEX IF NOT EXISTS idx_users_role_active      ON users(role, active);
+    CREATE INDEX IF NOT EXISTS idx_requests_tenant_id     ON service_requests(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_requests_status        ON service_requests(status);
+    CREATE INDEX IF NOT EXISTS idx_bookings_amenity_id    ON bookings(amenity_id);
+    CREATE INDEX IF NOT EXISTS idx_bookings_tenant_id     ON bookings(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_bookings_user_id       ON bookings(user_id);
+    CREATE INDEX IF NOT EXISTS idx_bookings_start_time    ON bookings(start_time);
+    CREATE INDEX IF NOT EXISTS idx_announcements_target   ON announcements(target_type, target_building);
+    CREATE INDEX IF NOT EXISTS idx_comments_request_id    ON service_request_comments(request_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_entity           ON audit_logs(entity, entity_id);
   `);
 
   // ── Migrations ────────────────────────────────────────────────────────────

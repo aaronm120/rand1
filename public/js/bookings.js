@@ -328,15 +328,20 @@ async function submitBooking() {
   if (!date)     { toast('Please select a date', 'warning'); return; }
   if (!startVal) { toast('Please enter a start time', 'warning'); return; }
   if (!endVal)   { toast('Please enter an end time', 'warning'); return; }
-  if (endVal <= startVal) { toast('End time must be after start time', 'warning'); return; }
+
+  const startMs = new Date(`${date}T${startVal}:00`).getTime();
+  const endMs   = new Date(`${date}T${endVal}:00`).getTime();
+  if (isNaN(startMs) || isNaN(endMs)) { toast('Invalid date/time', 'warning'); return; }
+  if (endMs <= startMs) { toast('End time must be after start time', 'warning'); return; }
+  if (startMs < Date.now()) { toast('Cannot book a time in the past', 'warning'); return; }
 
   const u = state.user;
   if (isPM(u) && !document.getElementById('bk-tenant')?.value) {
     toast('Please select a tenant', 'warning'); return;
   }
 
-  const start = new Date(`${date}T${startVal}:00`);
-  const end   = new Date(`${date}T${endVal}:00`);
+  const start = new Date(startMs);
+  const end   = new Date(endMs);
 
   const resources = Object.entries(window._resourceQtys||{})
     .filter(([,q])=>q>0).map(([id,quantity])=>({resource_id:parseInt(id),quantity}));

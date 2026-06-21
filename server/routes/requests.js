@@ -3,7 +3,7 @@ const path = require('path');
 const multer = require('multer');
 const { db, auditLog } = require('../database');
 const { requireAuth, requirePM, requirePMAdmin, isPM } = require('../middleware/auth');
-const { notifyNewRequest, notifyRequestStatus } = require('../lib/email');
+const { notifyNewRequest, notifyRequestStatus, notifyNewComment } = require('../lib/email');
 
 const router = express.Router();
 
@@ -111,7 +111,13 @@ router.get('/:id', requireAuth, (req, res) => {
     `).all(req.params.id);
   }
 
-  res.json({ ...req_, history, attachments, notes });
+  const comments = db.prepare(`
+    SELECT c.*, u.name as author_name, u.role as author_role
+    FROM service_request_comments c JOIN users u ON c.author_id = u.id
+    WHERE c.request_id = ? ORDER BY c.created_at ASC
+  `).all(req.params.id);
+
+  res.json({ ...req_, history, attachments, notes, comments });
 });
 
 // POST /api/requests — create
@@ -126,9 +132,13 @@ router.post('/', requireAuth, upload.array('attachments', 5), (req, res) => {
   if (isPM(req.user)) {
     if (!bodyTenantId) return res.status(400).json({ error: 'Tenant is required when PM creates a request' });
     tenantId = bodyTenantId;
-    // PM creating on behalf — find a tenant admin or use the PM user as the submitter
-    const tenantAdmin = db.prepare("SELECT id FROM users WHERE tenant_id=? AND role='tenant_admin' LIMIT 1").get(bodyTenantId);
-    submittedById = tenantAdmin ? tenantAdmin.id : req.user.id;
+    // PM creating on behalf — use a tenant user as the nominal submitter so status
+    // update emails go to someone on that tenant, not the PM. Prefer tenant_admin,
+    // fall back to any active tenant user.
+    const tenantRep = db.prepare(
+      `SELECT id FROM users WHERE tenant_id=? AND active=1 ORDER BY CASE role WHEN 'tenant_admin' THEN 0 ELSE 1 END LIMIT 1`
+    ).get(bodyTenantId);
+    submittedById = tenantRep ? tenantRep.id : req.user.id;
     createdByPMId = req.user.id;
   } else {
     if (!req.user.tenant_id) return res.status(400).json({ error: 'Not associated with a tenant' });
@@ -145,24 +155,26 @@ router.post('/', requireAuth, upload.array('attachments', 5), (req, res) => {
 
   const prio = VALID_PRIORITIES.includes(priority) ? priority : 'medium';
 
-  const result = db.prepare(`
-    INSERT INTO service_requests (tenant_id, building, category_id, description, priority, status, submitted_by_id, created_by_pm_id)
-    VALUES (?, ?, ?, ?, ?, 'open', ?, ?)
-  `).run(tenantId, tenant.building, category_id, description.trim(), prio, submittedById, createdByPMId);
+  const reqId = db.transaction(() => {
+    const result = db.prepare(`
+      INSERT INTO service_requests (tenant_id, building, category_id, description, priority, status, submitted_by_id, created_by_pm_id)
+      VALUES (?, ?, ?, ?, ?, 'open', ?, ?)
+    `).run(tenantId, tenant.building, category_id, description.trim(), prio, submittedById, createdByPMId);
 
-  const reqId = result.lastInsertRowid;
+    const id = result.lastInsertRowid;
 
-  // Record initial status
-  db.prepare(`INSERT INTO request_status_history (request_id, from_status, to_status, changed_by_id) VALUES (?, NULL, 'open', ?)`)
-    .run(reqId, req.user.id);
+    db.prepare(`INSERT INTO request_status_history (request_id, from_status, to_status, changed_by_id) VALUES (?, NULL, 'open', ?)`)
+      .run(id, req.user.id);
 
-  // Save attachments
-  if (req.files?.length) {
-    for (const f of req.files) {
-      db.prepare(`INSERT INTO request_attachments (request_id, original_name, stored_name, mime_type, uploaded_by_id) VALUES (?, ?, ?, ?, ?)`)
-        .run(reqId, f.originalname, f.filename, f.mimetype, req.user.id);
+    if (req.files?.length) {
+      for (const f of req.files) {
+        db.prepare(`INSERT INTO request_attachments (request_id, original_name, stored_name, mime_type, uploaded_by_id) VALUES (?, ?, ?, ?, ?)`)
+          .run(id, f.originalname, f.filename, f.mimetype, req.user.id);
+      }
     }
-  }
+
+    return id;
+  })();
 
   auditLog(req.user.id, 'create_request', 'service_request', reqId, { tenantId, priority: prio }, req.ip);
   const created = getRequestById(reqId);
@@ -181,18 +193,24 @@ router.post('/', requireAuth, upload.array('attachments', 5), (req, res) => {
     WHERE u.id = ?
   `).get(req.user.id) : null;
 
-  notifyNewRequest(created, pmUsers, submitter).catch(() => {});
+  notifyNewRequest(created, pmUsers, submitter).catch(err => console.warn('[Email] Notification failed:', err.message));
 
   res.status(201).json(created);
 });
 
-// PATCH /api/requests/:id/status — PM only
-router.patch('/:id/status', requirePM, (req, res) => {
+// PATCH /api/requests/:id/status — PM can set any status; submitter can only close their own
+router.patch('/:id/status', requireAuth, (req, res) => {
   const { status, note } = req.body;
   if (!VALID_STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
   const req_ = db.prepare('SELECT * FROM service_requests WHERE id=?').get(req.params.id);
   if (!req_) return res.status(404).json({ error: 'Request not found' });
+
+  if (!isPM(req.user)) {
+    if (req_.tenant_id !== req.user.tenant_id) return res.status(403).json({ error: 'Access denied' });
+    if (req_.submitted_by_id !== req.user.id) return res.status(403).json({ error: 'You can only close requests you submitted' });
+    if (status !== 'closed') return res.status(403).json({ error: 'You can only close a request, not change its status otherwise' });
+  }
 
   const oldStatus = req_.status;
   db.prepare(`UPDATE service_requests SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(status, req.params.id);
@@ -201,14 +219,26 @@ router.patch('/:id/status', requirePM, (req, res) => {
 
   auditLog(req.user.id, 'status_change', 'service_request', req.params.id, { from: oldStatus, to: status }, req.ip);
 
-  // Email notification to the request submitter only
   const full = getRequestById(req.params.id);
-  const submitter = db.prepare(`
-    SELECT u.email, np.request_updates FROM users u
-    LEFT JOIN notification_prefs np ON np.user_id = u.id
-    WHERE u.id = ? AND u.active = 1
-  `).get(req_.submitted_by_id);
-  notifyRequestStatus(full, status, submitter ? [submitter] : []).catch(() => {});
+  if (isPM(req.user)) {
+    // PM changed status → notify the submitter (skip if PM is somehow the submitter)
+    if (req_.submitted_by_id !== req.user.id) {
+      const submitter = db.prepare(`
+        SELECT u.email, np.request_updates FROM users u
+        LEFT JOIN notification_prefs np ON np.user_id = u.id
+        WHERE u.id = ? AND u.active = 1
+      `).get(req_.submitted_by_id);
+      notifyRequestStatus(full, status, submitter ? [submitter] : []).catch(err => console.warn('[Email] Notification failed:', err.message));
+    }
+  } else {
+    // Tenant closed their own request → notify PM users so they're aware
+    const pmUsers = db.prepare(`
+      SELECT u.email, np.request_updates FROM users u
+      LEFT JOIN notification_prefs np ON np.user_id = u.id
+      WHERE u.role IN ('pm_admin', 'pm_user') AND u.active = 1
+    `).all();
+    notifyRequestStatus(full, status, pmUsers).catch(err => console.warn('[Email] Notification failed:', err.message));
+  }
 
   res.json(getRequestById(req.params.id));
 });
@@ -235,6 +265,26 @@ router.post('/:id/notes', requirePM, (req, res) => {
     SELECT n.*, u.name as author_name FROM request_notes n JOIN users u ON n.author_id = u.id WHERE n.id = ?
   `).get(result.lastInsertRowid);
   res.status(201).json(note);
+});
+
+// POST /api/requests/:id/comments — shared tenant ↔ PM comment thread
+router.post('/:id/comments', requireAuth, (req, res) => {
+  const { content } = req.body;
+  if (!content?.trim()) return res.status(400).json({ error: 'Comment cannot be empty' });
+  const req_ = db.prepare('SELECT * FROM service_requests WHERE id=?').get(req.params.id);
+  if (!req_) return res.status(404).json({ error: 'Request not found' });
+  if (!isPM(req.user) && req_.tenant_id !== req.user.tenant_id) return res.status(403).json({ error: 'Access denied' });
+  const result = db.prepare(`INSERT INTO service_request_comments (request_id, author_id, content) VALUES (?, ?, ?)`)
+    .run(req.params.id, req.user.id, content.trim());
+  const comment = db.prepare(`
+    SELECT c.*, u.name as author_name, u.role as author_role
+    FROM service_request_comments c JOIN users u ON c.author_id = u.id WHERE c.id = ?
+  `).get(result.lastInsertRowid);
+
+  const full = getRequestById(req.params.id);
+  notifyNewComment(full, comment, isPM(req.user)).catch(err => console.warn('[Email] Notification failed:', err.message));
+
+  res.status(201).json(comment);
 });
 
 // POST /api/requests/:id/attachments — upload attachment

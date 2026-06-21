@@ -1,5 +1,13 @@
 const jwt = require('jsonwebtoken');
+const { db } = require('../database');
 
+if (!process.env.JWT_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('[FATAL] JWT_SECRET environment variable is not set. Refusing to start.');
+    process.exit(1);
+  }
+  console.warn('[WARN] JWT_SECRET not set — using insecure dev default. Set JWT_SECRET in .env before deploying.');
+}
 const JWT_SECRET = process.env.JWT_SECRET || 'roc-portal-dev-secret-change-in-production';
 
 // Roles: pm_admin > pm_user > tenant_admin > tenant_user
@@ -13,10 +21,15 @@ function requireAuth(req, res, next) {
   }
   try {
     req.user = jwt.verify(header.slice(7), JWT_SECRET);
-    next();
   } catch {
-    res.status(401).json({ error: 'Invalid or expired token' });
+    return res.status(401).json({ error: 'Invalid or expired token' });
   }
+  // Confirm the account is still active — JWT alone doesn't reflect deactivation
+  const live = db.prepare('SELECT active FROM users WHERE id=?').get(req.user.id);
+  if (!live || !live.active) {
+    return res.status(401).json({ error: 'This account has been deactivated.' });
+  }
+  next();
 }
 
 function requirePM(req, res, next) {

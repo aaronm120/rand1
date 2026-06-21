@@ -2,8 +2,15 @@
    SERVICE REQUESTS — list, new, detail
    ═══════════════════════════════════════════════════════ */
 
+let _reqFilterListener = null;
+
 // ── List ──────────────────────────────────────────────────────────
 route('requests', async () => {
+  // Remove stale filter listener from a previous visit before registering a new one
+  if (_reqFilterListener) {
+    document.removeEventListener('filter-change', _reqFilterListener);
+    _reqFilterListener = null;
+  }
   const u = state.user;
   setHeader('Service Requests', isPM(u) ? 'All buildings' : u.tenant_name || '');
 
@@ -106,12 +113,9 @@ route('requests', async () => {
     </div>
   `);
 
-  document.addEventListener('filter-change', applyFilters, { once: false });
+  _reqFilterListener = applyFilters;
+  document.addEventListener('filter-change', applyFilters);
   render(requests);
-
-  // cleanup on navigation away
-  const cleanup = () => document.removeEventListener('filter-change', applyFilters);
-  document.getElementById('page-content').addEventListener('DOMNodeRemoved', cleanup, { once: true });
 });
 
 // ── New Request ────────────────────────────────────────────────────
@@ -221,6 +225,9 @@ route('request-detail', async ({ id }) => {
   const req = await apiFetch('GET', `/api/requests/${id}`);
   setHeader(`Request #${req.id}`, `${req.category_name} · ${req.tenant_name}`);
 
+  const isSubmitter = !isPM(u) && req.submitted_by_id === u.id;
+  const canClose = isSubmitter && req.status !== 'closed';
+
   const statusOptions = ['open','in_progress','pending_tenant','resolved','closed'];
   const pmPanel = isPM(u) ? `
     <div class="card" style="margin-top:18px">
@@ -256,6 +263,14 @@ route('request-detail', async ({ id }) => {
           <textarea class="form-textarea" id="new-note" placeholder="Add internal note…" rows="2" style="min-height:64px"></textarea>
           <button class="btn btn-secondary" style="align-self:flex-end" onclick="addNote(${req.id})">Add Note</button>
         </div>
+      </div>
+    </div>` : '';
+
+  const tenantPanel = canClose ? `
+    <div class="card" style="margin-top:18px">
+      <div class="card-body">
+        <button class="btn btn-secondary" onclick="closeRequest(${req.id})">Mark as Closed</button>
+        <div style="font-size:.8rem;color:var(--gray-400);margin-top:6px">Close this request if your issue has been resolved.</div>
       </div>
     </div>` : '';
 
@@ -301,15 +316,46 @@ route('request-detail', async ({ id }) => {
             <div>${attHtml}</div>
           </div>
         </div>
-        ${pmPanel}
+        ${isPM(u) ? pmPanel : tenantPanel}
+        <div class="card" style="margin-top:18px">
+          <div class="card-header"><div class="card-title">💬 Comments</div></div>
+          <div class="card-body">
+            <div id="comments-list">${renderComments(req.comments || [], u)}</div>
+            ${req.status !== 'closed' ? `
+            <div style="margin-top:14px;display:flex;gap:8px;align-items:flex-end">
+              <textarea class="form-textarea" id="new-comment" placeholder="Add a comment…" rows="2" style="min-height:64px;flex:1"></textarea>
+              <button class="btn btn-primary" style="align-self:flex-end" onclick="addComment(${req.id})">Send</button>
+            </div>` : '<div style="font-size:.85rem;color:var(--gray-400);margin-top:8px">This request is closed.</div>'}
+          </div>
+        </div>
       </div>
-      <div class="card">
-        <div class="card-header"><div class="card-title">Status History</div></div>
-        <div class="card-body" id="history-list">${histHtml}</div>
+      <div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">Status History</div></div>
+          <div class="card-body" id="history-list">${histHtml}</div>
+        </div>
       </div>
     </div>
   `);
 });
+
+function renderComments(comments, currentUser) {
+  if (!comments.length) return '<div style="font-size:.85rem;color:var(--gray-400)">No comments yet. Add one below to start the conversation.</div>';
+  return comments.map(c => {
+    const isMe = c.author_id === currentUser?.id;
+    const isPMAuthor = c.author_role === 'pm_admin' || c.author_role === 'pm_user';
+    const align = isMe ? 'flex-end' : 'flex-start';
+    const bubbleBg = isPMAuthor ? 'var(--primary)' : 'var(--gray-100)';
+    const bubbleColor = isPMAuthor ? '#fff' : 'var(--gray-800)';
+    const metaColor = isPMAuthor ? 'var(--primary-light)' : 'var(--gray-500)';
+    const label = isPMAuthor ? 'Building Mgmt' : 'Tenant';
+    return `
+      <div style="display:flex;flex-direction:column;align-items:${align};margin-bottom:12px">
+        <div style="max-width:85%;background:${bubbleBg};color:${bubbleColor};padding:10px 14px;border-radius:12px;font-size:.875rem;white-space:pre-wrap">${esc(c.content)}</div>
+        <div style="font-size:.75rem;color:${metaColor};margin-top:3px">${esc(c.author_name)} · ${label} · ${fmt(c.created_at)}</div>
+      </div>`;
+  }).join('');
+}
 
 function renderNotes(notes) {
   if (!notes.length) return '<div style="font-size:.85rem;color:var(--gray-400)">No internal notes yet</div>';
@@ -338,6 +384,42 @@ async function updatePriority(reqId) {
     await apiFetch('PATCH', `/api/requests/${reqId}/priority`, { priority });
     toast('Priority updated', 'success');
     navigate('request-detail', { id: reqId });
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function closeRequest(reqId) {
+  if (!confirm('Mark this request as closed? You can contact building management if the issue reoccurs.')) return;
+  try {
+    await apiFetch('PATCH', `/api/requests/${reqId}/status`, { status: 'closed' });
+    toast('Request closed', 'success');
+    navigate('request-detail', { id: reqId });
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function addComment(reqId) {
+  const content = document.getElementById('new-comment')?.value.trim();
+  if (!content) { toast('Comment cannot be empty', 'warning'); return; }
+  try {
+    const comment = await apiFetch('POST', `/api/requests/${reqId}/comments`, { content });
+    document.getElementById('new-comment').value = '';
+    const list = document.getElementById('comments-list');
+    if (list) {
+      const emptyMsg = list.querySelector('[style*="No comments"]');
+      if (emptyMsg) emptyMsg.remove();
+      const isPMAuthor = comment.author_role === 'pm_admin' || comment.author_role === 'pm_user';
+      const bubbleBg = isPMAuthor ? 'var(--primary)' : 'var(--gray-100)';
+      const bubbleColor = isPMAuthor ? '#fff' : 'var(--gray-800)';
+      const metaColor = isPMAuthor ? 'var(--primary-light)' : 'var(--gray-500)';
+      const label = isPMAuthor ? 'Building Mgmt' : 'Tenant';
+      const div = document.createElement('div');
+      div.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;margin-bottom:12px';
+      div.innerHTML = `
+        <div style="max-width:85%;background:${bubbleBg};color:${bubbleColor};padding:10px 14px;border-radius:12px;font-size:.875rem;white-space:pre-wrap">${esc(comment.content)}</div>
+        <div style="font-size:.75rem;color:${metaColor};margin-top:3px">${esc(comment.author_name)} · ${label} · ${fmt(comment.created_at)}</div>`;
+      list.appendChild(div);
+      list.scrollTop = list.scrollHeight;
+    }
+    toast('Comment added', 'success');
   } catch (e) { toast(e.message, 'error'); }
 }
 

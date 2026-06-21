@@ -1,7 +1,7 @@
 const express = require('express');
 const { db, auditLog } = require('../database');
 const { requireAuth, requirePM, requirePMAdmin, isPM } = require('../middleware/auth');
-const { notifyBookingConfirm } = require('../lib/email');
+const { notifyBookingConfirm, notifyBookingCancelled } = require('../lib/email');
 
 const router = express.Router();
 
@@ -171,7 +171,7 @@ router.post('/', requireAuth, (req, res) => {
 
   // Email confirmation
   const userPrefs = db.prepare('SELECT u.email, np.booking_confirmations FROM users u LEFT JOIN notification_prefs np ON np.user_id=u.id WHERE u.id=?').get(req.user.id);
-  if (userPrefs) notifyBookingConfirm(booking, userPrefs).catch(() => {});
+  if (userPrefs) notifyBookingConfirm(booking, userPrefs).catch(err => console.warn('[Email] Notification failed:', err.message));
 
   res.status(201).json(booking);
 });
@@ -186,7 +186,9 @@ router.patch('/:id/cancel', requireAuth, (req, res) => {
   if (booking.status === 'cancelled') return res.status(400).json({ error: 'Already cancelled' });
   db.prepare('UPDATE bookings SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run('cancelled', req.params.id);
   auditLog(req.user.id, 'cancel_booking', 'booking', req.params.id, null, req.ip);
-  res.json(bookingWithDetails(req.params.id));
+  const cancelled = bookingWithDetails(req.params.id);
+  notifyBookingCancelled({ ...cancelled, user_id: booking.user_id }, req.user.id).catch(err => console.warn('[Email] Notification failed:', err.message));
+  res.json(cancelled);
 });
 
 // ── Blackouts (PM Admin) ──────────────────────────────────────────────────────

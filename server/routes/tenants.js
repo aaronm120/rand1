@@ -108,7 +108,15 @@ router.delete('/:id', requirePMAdmin, (req, res) => {
   if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
   const userCount = db.prepare('SELECT COUNT(*) as cnt FROM users WHERE tenant_id=?').get(req.params.id).cnt;
   if (userCount > 0) {
-    return res.status(409).json({ error: `Cannot delete tenant with ${userCount} active user${userCount !== 1 ? 's' : ''}. Remove or reassign their accounts first.` });
+    return res.status(409).json({ error: `Cannot delete tenant with ${userCount} user${userCount !== 1 ? 's' : ''}. Remove or reassign their accounts first.` });
+  }
+  const requestCount = db.prepare('SELECT COUNT(*) as cnt FROM service_requests WHERE tenant_id=?').get(req.params.id).cnt;
+  if (requestCount > 0) {
+    return res.status(409).json({ error: `Cannot delete tenant with ${requestCount} service request${requestCount !== 1 ? 's' : ''} on record.` });
+  }
+  const bookingCount = db.prepare('SELECT COUNT(*) as cnt FROM bookings WHERE tenant_id=?').get(req.params.id).cnt;
+  if (bookingCount > 0) {
+    return res.status(409).json({ error: `Cannot delete tenant with ${bookingCount} booking${bookingCount !== 1 ? 's' : ''} on record.` });
   }
   db.prepare('DELETE FROM tenant_contacts WHERE tenant_id=?').run(req.params.id);
   db.prepare('DELETE FROM leases WHERE tenant_id=?').run(req.params.id);

@@ -60,9 +60,17 @@ router.post('/', requirePM, (req, res) => {
   const { title, content, target_type, target_building, target_tenant_id, urgent, pinned, publish_at, expires_at } = req.body;
   if (!title?.trim() || !content?.trim()) return res.status(400).json({ error: 'Title and content are required' });
   if (!TARGET_TYPES.includes(target_type)) return res.status(400).json({ error: 'Invalid target type' });
+  if (target_type === 'building' && !['728','730','732'].includes(target_building)) {
+    return res.status(400).json({ error: 'Invalid building — must be 728, 730, or 732' });
+  }
 
-  const publishTime = publish_at ? new Date(publish_at).toISOString() : new Date().toISOString();
-  const expiresTime = expires_at ? new Date(expires_at).toISOString() : null;
+  const publishDate = publish_at ? new Date(publish_at) : null;
+  if (publishDate && isNaN(publishDate.getTime())) return res.status(400).json({ error: 'Invalid publish_at date' });
+  const publishTime = publishDate ? publishDate.toISOString() : new Date().toISOString();
+
+  const expiresDate = expires_at ? new Date(expires_at) : null;
+  if (expiresDate && isNaN(expiresDate.getTime())) return res.status(400).json({ error: 'Invalid expires_at date' });
+  const expiresTime = expiresDate ? expiresDate.toISOString() : null;
 
   const result = db.prepare(`
     INSERT INTO announcements (title, content, author_id, target_type, target_building, target_tenant_id, urgent, pinned, publish_at, expires_at)
@@ -93,7 +101,7 @@ router.post('/', requirePM, (req, res) => {
       params = [target_tenant_id];
     }
     const recipients = db.prepare(recipientQuery).all(...params);
-    notifyAnnouncement(ann, recipients).catch(() => {});
+    notifyAnnouncement(ann, recipients).catch(err => console.warn('[Email] Notification failed:', err.message));
   }
 
   res.status(201).json(ann);
@@ -104,7 +112,14 @@ router.patch('/:id', requirePM, (req, res) => {
   const { title, content, urgent, pinned, expires_at } = req.body;
   const ann = db.prepare('SELECT * FROM announcements WHERE id=?').get(req.params.id);
   if (!ann) return res.status(404).json({ error: 'Not found' });
-  const expiresTime = expires_at === '' ? null : (expires_at ? new Date(expires_at).toISOString() : ann.expires_at);
+  let expiresTime = ann.expires_at;
+  if (expires_at === '' || expires_at === null) {
+    expiresTime = null;
+  } else if (expires_at) {
+    const d = new Date(expires_at);
+    if (isNaN(d.getTime())) return res.status(400).json({ error: 'Invalid expires_at date' });
+    expiresTime = d.toISOString();
+  }
   db.prepare(`UPDATE announcements SET title=?, content=?, urgent=?, pinned=?, expires_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
     .run(title || ann.title, content || ann.content, urgent !== undefined ? (urgent ? 1 : 0) : ann.urgent,
       pinned !== undefined ? (pinned ? 1 : 0) : ann.pinned, expiresTime, req.params.id);

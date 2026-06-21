@@ -73,15 +73,23 @@ router.get('/me', requireAuth, (req, res) => {
 
 // PUT /api/auth/profile
 router.put('/profile', requireAuth, (req, res) => {
-  const { name, title, phone, directory_opt_out } = req.body;
+  const { name, email, title, phone, directory_opt_out } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Name is required' });
-  db.prepare(`UPDATE users SET name=?, title=?, phone=?, directory_opt_out=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-    .run(name.trim(), title || null, phone || null, directory_opt_out ? 1 : 0, req.user.id);
-  const user = db.prepare(`
+
+  const user = db.prepare('SELECT * FROM users WHERE id=?').get(req.user.id);
+  const newEmail = email?.toLowerCase().trim() || user.email;
+  if (newEmail !== user.email) {
+    const conflict = db.prepare('SELECT id FROM users WHERE email=? AND id!=?').get(newEmail, req.user.id);
+    if (conflict) return res.status(409).json({ error: 'Email already in use' });
+  }
+
+  db.prepare(`UPDATE users SET name=?, email=?, title=?, phone=?, directory_opt_out=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+    .run(name.trim(), newEmail, title || null, phone || null, directory_opt_out ? 1 : 0, req.user.id);
+  const updated = db.prepare(`
     SELECT u.*, t.name as tenant_name, t.building as tenant_building
     FROM users u LEFT JOIN tenants t ON u.tenant_id = t.id WHERE u.id = ?
   `).get(req.user.id);
-  res.json(safeUser(user));
+  res.json(safeUser(updated));
 });
 
 // PUT /api/auth/password
@@ -148,12 +156,12 @@ router.post('/users', requirePMAdmin, (req, res) => {
   const user = db.prepare(`
     SELECT u.*, t.name as tenant_name FROM users u LEFT JOIN tenants t ON u.tenant_id = t.id WHERE u.id = ?
   `).get(result.lastInsertRowid);
-  res.status(201).json(safeUser(user));
+  res.status(201).json(safePMUser(user));
 });
 
 // PUT /api/auth/users/:id
 router.put('/users/:id', requirePMAdmin, (req, res) => {
-  const { name, role, tenant_id, title, phone, active, password, door_code } = req.body;
+  const { email, name, role, tenant_id, title, phone, active, password, door_code, directory_opt_out } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE id=?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
 
@@ -163,10 +171,25 @@ router.put('/users/:id', requirePMAdmin, (req, res) => {
     if (adminCount <= 1) return res.status(400).json({ error: 'Cannot change role of the only PM Admin' });
   }
 
-  db.prepare(`UPDATE users SET name=?, role=?, tenant_id=?, title=?, phone=?, active=?, door_code=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-    .run(name || user.name, role || user.role, tenant_id ?? user.tenant_id,
+  // Tenant roles require a tenant association
+  const newRole = role || user.role;
+  const newTenantId = tenant_id !== undefined ? tenant_id : user.tenant_id;
+  if (['tenant_admin', 'tenant_user'].includes(newRole) && !newTenantId) {
+    return res.status(400).json({ error: 'Tenant is required for tenant roles' });
+  }
+
+  const newEmail = email?.toLowerCase().trim() || user.email;
+  if (newEmail !== user.email) {
+    const conflict = db.prepare('SELECT id FROM users WHERE email=? AND id!=?').get(newEmail, req.params.id);
+    if (conflict) return res.status(409).json({ error: 'Email already in use' });
+  }
+
+  db.prepare(`UPDATE users SET email=?, name=?, role=?, tenant_id=?, title=?, phone=?, active=?, door_code=?, directory_opt_out=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+    .run(newEmail, name || user.name, role || user.role, tenant_id ?? user.tenant_id,
       title ?? user.title, phone ?? user.phone, active !== undefined ? (active ? 1 : 0) : user.active,
-      door_code !== undefined ? (door_code || null) : user.door_code, req.params.id);
+      door_code !== undefined ? (door_code || null) : user.door_code,
+      directory_opt_out !== undefined ? (directory_opt_out ? 1 : 0) : user.directory_opt_out,
+      req.params.id);
 
   if (password && password.length >= 8) {
     db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(bcrypt.hashSync(password, 10), req.params.id);
@@ -200,8 +223,11 @@ router.post('/impersonate/:id', requirePMAdmin, (req, res) => {
     JWT_SECRET, { expiresIn: '4h' }
   );
 
+  db.prepare('INSERT OR IGNORE INTO notification_prefs (user_id) VALUES (?)').run(target.id);
+  const prefs = db.prepare('SELECT * FROM notification_prefs WHERE user_id = ?').get(target.id);
+
   auditLog(req.user.id, 'impersonate_start', 'user', target.id, { target_email: target.email, target_name: target.name }, req.ip);
-  res.json({ token, user: { ...safeUser(target), impersonatedBy: req.user.id, impersonatedByName: req.user.name } });
+  res.json({ token, user: { ...safeUser(target), notification_prefs: prefs, impersonatedBy: req.user.id, impersonatedByName: req.user.name } });
 });
 
 // DELETE /api/auth/users/:id — PM Admin only, cannot delete self

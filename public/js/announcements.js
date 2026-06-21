@@ -221,7 +221,7 @@ async function saveAnnEdit(id) {
   const pinned  = document.getElementById('e-ann-pinned')?.checked;
   const expires = document.getElementById('e-ann-expires')?.value;
   try {
-    await apiFetch('PATCH', `/api/announcements/${id}`, { title, content, urgent, pinned, expires_at: expires || '' });
+    await apiFetch('PATCH', `/api/announcements/${id}`, { title, content, urgent, pinned, expires_at: expires || null });
     closeModal(); toast('Announcement updated', 'success'); navigate('announcements');
   } catch (e) { toast(e.message, 'error'); }
 }

@@ -78,10 +78,16 @@ async function apiFetch(method, url, body, isFormData) {
   });
 
   if (res.status === 401) {
-    state.token = null; state.user = null;
-    localStorage.removeItem('roc_token');
-    showAuth('login');
-    throw new Error('Session expired');
+    if (state.token) {
+      // Mid-session expiry — clear everything and redirect to login
+      state.token = null; state.user = null;
+      localStorage.removeItem('roc_token');
+      localStorage.removeItem('roc_admin_token');
+      showAuth('login');
+      throw new Error('Session expired — please sign in again');
+    }
+    // Login attempt with bad credentials — just throw the server's message
+    throw new Error(data.error || 'Authentication failed');
   }
 
   const data = await res.json().catch(() => ({}));

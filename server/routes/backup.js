@@ -137,7 +137,7 @@ router.post('/test-email', requirePMAdmin, async (req, res) => {
         <p style="color:#166534;background:#dcfce7;padding:10px 14px;border-radius:6px">
           &#10003; Your SMTP configuration is working correctly.
         </p>
-        <p style="color:#999;font-size:12px;margin-top:24px">Sent via the Admin Panel · SMTP host: ${smtp_host}</p>
+        <p style="color:#999;font-size:12px;margin-top:24px">Sent via the Admin Panel · SMTP host: ${smtp_host.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</p>
       </div>`,
     });
     res.json({ ok: true });

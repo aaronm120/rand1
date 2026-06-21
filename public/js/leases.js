@@ -6,10 +6,16 @@ route('leases', async () => {
   if (!isPMAdmin(state.user)) { navigate('dashboard'); return; }
   setHeader('Lease Tracking', 'Tenant lease records');
 
-  const [leases, tenants] = await Promise.all([
-    apiFetch('GET', '/api/leases'),
-    apiFetch('GET', '/api/tenants'),
-  ]);
+  let leases, tenants;
+  try {
+    [leases, tenants] = await Promise.all([
+      apiFetch('GET', '/api/leases'),
+      apiFetch('GET', '/api/tenants'),
+    ]);
+  } catch (e) {
+    setContent(`<div class="card"><div class="card-body"><p style="color:var(--danger)">Failed to load lease data. Please refresh the page.</p></div></div>`);
+    return;
+  }
 
   window._leaseTenants = tenants;
 

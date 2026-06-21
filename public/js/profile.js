@@ -3,6 +3,11 @@
    ═══════════════════════════════════════════════════════ */
 
 route('profile', async () => {
+  // Fetch fresh data — admin may have updated this user's profile since login
+  try {
+    const fresh = await apiFetch('GET', '/api/auth/me');
+    state.user = { ...state.user, ...fresh };
+  } catch (_) {}
   const u = state.user;
   setHeader('My Profile', u.tenant_name || '');
 
@@ -30,8 +35,7 @@ route('profile', async () => {
             </div>
             <div class="form-group">
               <label class="form-label">Email</label>
-              <input class="form-input" value="${esc(u.email||'')}" disabled style="opacity:.6">
-              <div class="form-hint">Email address cannot be changed. Contact building management.</div>
+              <input class="form-input" id="p-email" type="email" value="${esc(u.email||'')}">
             </div>
             ${!isPM(u) ? `
               <div class="form-group">
@@ -120,6 +124,7 @@ async function saveProfile() {
   const u = state.user;
   const body = {
     name:               document.getElementById('p-name')?.value.trim(),
+    email:              document.getElementById('p-email')?.value.trim() || undefined,
     title:              document.getElementById('p-title')?.value.trim() || null,
     phone:              document.getElementById('p-phone')?.value.trim() || null,
     directory_opt_out:  document.getElementById('p-optout')?.checked ? 1 : 0,

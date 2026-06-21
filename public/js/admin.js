@@ -114,6 +114,9 @@ function showUserModal(id) {
           <label class="form-label">Door Code <span style="font-size:.75rem;font-weight:400;color:var(--gray-500)">(PM view only)</span></label>
           <input class="form-input" id="u-door-code" value="${esc(u.door_code||'')}" placeholder="e.g. 4821" autocomplete="off">
         </div>
+        <div class="form-group" id="u-dir-optout-group">
+          <label class="form-check"><input type="checkbox" id="u-dir-optout" ${u.directory_opt_out?'checked':''}> <span>Hide from Building Directory</span></label>
+        </div>
         ${!editing ? `<div class="form-group"><label class="form-label required">Password</label><input class="form-input" id="u-password" type="password" placeholder="Min 8 characters"></div>` : ''}
         ${editing ? `<div class="form-group"><label class="form-label">New Password <span style="font-weight:400;font-size:.8rem">(leave blank to keep current)</span></label><input class="form-input" id="u-password" type="password" placeholder="Leave blank to keep current"></div>` : ''}
         ${editing ? `<div class="form-group"><label class="form-check"><input type="checkbox" id="u-active" ${u.active?'checked':''}> <span>Account Active</span></label></div>` : ''}
@@ -131,10 +134,12 @@ function showUserModal(id) {
 function toggleTenantField() {
   const role = document.getElementById('u-role')?.value || '';
   const isPMRole = role.startsWith('pm_');
-  const tenantGroup = document.getElementById('u-tenant-group');
-  const doorGroup   = document.getElementById('u-door-code-group');
-  if (tenantGroup) tenantGroup.style.display = isPMRole ? 'none' : '';
-  if (doorGroup)   doorGroup.style.display   = isPMRole ? 'none' : '';
+  const tenantGroup  = document.getElementById('u-tenant-group');
+  const doorGroup    = document.getElementById('u-door-code-group');
+  const optoutGroup  = document.getElementById('u-dir-optout-group');
+  if (tenantGroup)  tenantGroup.style.display  = isPMRole ? 'none' : '';
+  if (doorGroup)    doorGroup.style.display    = isPMRole ? 'none' : '';
+  if (optoutGroup)  optoutGroup.style.display  = isPMRole ? 'none' : '';
 }
 
 async function startImpersonation(userId) {
@@ -161,15 +166,16 @@ async function deleteUser(id) {
 
 async function saveUser(id) {
   const body = {
-    name:      document.getElementById('u-name')?.value.trim(),
-    email:     document.getElementById('u-email')?.value.trim(),
-    role:      document.getElementById('u-role')?.value,
-    tenant_id: document.getElementById('u-tenant')?.value || null,
-    title:     document.getElementById('u-title')?.value || null,
-    phone:     document.getElementById('u-phone')?.value || null,
-    door_code: document.getElementById('u-door-code')?.value || null,
-    password:  document.getElementById('u-password')?.value || undefined,
-    active:    id ? (document.getElementById('u-active')?.checked ? 1 : 0) : 1,
+    name:               document.getElementById('u-name')?.value.trim(),
+    email:              document.getElementById('u-email')?.value.trim(),
+    role:               document.getElementById('u-role')?.value,
+    tenant_id:          document.getElementById('u-tenant')?.value || null,
+    title:              document.getElementById('u-title')?.value || null,
+    phone:              document.getElementById('u-phone')?.value || null,
+    door_code:          document.getElementById('u-door-code')?.value || null,
+    directory_opt_out:  document.getElementById('u-dir-optout')?.checked ? 1 : 0,
+    password:           document.getElementById('u-password')?.value || undefined,
+    active:             id ? (document.getElementById('u-active')?.checked ? 1 : 0) : 1,
   };
   if (!body.name || !body.email) { toast('Name and email are required', 'warning'); return; }
   if (!id && !body.password) { toast('Password is required for new users', 'warning'); return; }
@@ -516,7 +522,13 @@ async function deleteResource(id, amenityId) {
 
 // ── SETTINGS TAB ──────────────────────────────────────────────────
 async function renderSettingsTab(el) {
-  const s = await apiFetch('GET', '/api/settings');
+  let s;
+  try {
+    s = await apiFetch('GET', '/api/settings/admin');
+  } catch (e) {
+    el.innerHTML = `<div class="card"><div class="card-body"><p style="color:var(--danger)">Failed to load settings: ${esc(e.message)}</p></div></div>`;
+    return;
+  }
 
   el.innerHTML = `
     <div class="card">
@@ -601,8 +613,6 @@ async function renderSettingsTab(el) {
         <div class="form-group">
           <label class="form-check"><input type="checkbox" id="s-email-enabled" ${(s.email_enabled==='true'||s.email_enabled==='1')?'checked':''}> <span>Enable email notifications</span></label>
         </div>
-        <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
-
         <div style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-500);margin-top:28px;margin-bottom:12px">Maintenance Mode</div>
         <div class="form-group">
           <label class="form-check"><input type="checkbox" id="s-maint-mode" ${(s.maintenance_mode==='1'||s.maintenance_mode==='true')?'checked':''}> <span>Enable maintenance mode — blocks all tenant logins and shows a maintenance message</span></label>
@@ -611,6 +621,7 @@ async function renderSettingsTab(el) {
           <label class="form-label">Maintenance Message</label>
           <textarea class="form-textarea" id="s-maint-msg" rows="2" placeholder="Message shown to tenants during maintenance…">${esc(s.maintenance_message||'')}</textarea>
         </div>
+        <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
 
         <div style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-500);margin-top:28px;margin-bottom:12px">Backup &amp; Restore</div>
         <div class="form-group">
