@@ -150,10 +150,11 @@ async function saveProfile() {
     if (!pw) { toast('Enter your current password to change your email address', 'warning'); return; }
     body.current_password = pw;
   }
+  const btn = document.querySelector('button[onclick="saveProfile()"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   try {
     const updated = await apiFetch('PUT', '/api/auth/profile', body);
     state.user = { ...state.user, ...updated };
-    // Reset the email password field after a successful save
     const group = document.getElementById('email-pw-group');
     const pw    = document.getElementById('p-email-pw');
     if (group) group.style.display = 'none';
@@ -161,6 +162,9 @@ async function saveProfile() {
     toast('Profile saved', 'success');
     renderNav();
   } catch (e) { toast(e.message, 'error'); }
+  finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save Changes'; }
+  }
 }
 
 async function changePassword() {
@@ -170,9 +174,10 @@ async function changePassword() {
   if (!current || !newPw || !confirm) { toast('All password fields are required', 'warning'); return; }
   if (newPw !== confirm) { toast('New passwords do not match', 'warning'); return; }
   if (newPw.length < 8) { toast('Password must be at least 8 characters', 'warning'); return; }
+  const btn = document.querySelector('button[onclick="changePassword()"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Updating…'; }
   try {
     const result = await apiFetch('PUT', '/api/auth/password', { current_password: current, new_password: newPw });
-    // Server returns a refreshed token with updated token_version — store it to stay logged in
     if (result.token) {
       state.token = result.token;
       localStorage.setItem('roc_token', result.token);
@@ -182,6 +187,9 @@ async function changePassword() {
     document.getElementById('pw-new').value = '';
     document.getElementById('pw-confirm').value = '';
   } catch (e) { toast(e.message, 'error'); }
+  finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Update Password'; }
+  }
 }
 
 async function saveNotifications() {

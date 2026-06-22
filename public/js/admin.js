@@ -328,7 +328,7 @@ function showTenantContactsModal(tenantId) {
     showModal(`
       <div class="modal-header"><div class="modal-title">Named Contacts · ${esc(tenant.name)}</div><button class="modal-close" onclick="closeModal()">×</button></div>
       <div class="modal-body">
-        <div id="contacts-list">${contacts.length ? renderContacts(contacts) : '<div style="font-size:.875rem;color:var(--gray-400);margin-bottom:12px">No contacts yet</div>'}</div>
+        <div id="contacts-list">${contacts.length ? renderContacts(contacts) : '<div data-empty="1" style="font-size:.875rem;color:var(--gray-400);margin-bottom:12px">No contacts yet</div>'}</div>
         <div style="border-top:1px solid var(--gray-200);padding-top:14px;margin-top:12px">
           <div style="font-weight:600;margin-bottom:10px;font-size:.9rem">Add Contact</div>
           <div class="form-row"><div class="form-group"><label class="form-label required">Name</label><input class="form-input" id="nc-name"></div>
@@ -353,7 +353,9 @@ async function addContact(tenantId) {
   if (!body.name) { toast('Contact name is required', 'warning'); return; }
   try {
     const c = await apiFetch('POST', `/api/tenants/${tenantId}/contacts`, body);
-    document.getElementById('contacts-list').insertAdjacentHTML('beforeend', `
+    const contactsList = document.getElementById('contacts-list');
+    contactsList.querySelector('[data-empty]')?.remove();
+    contactsList.insertAdjacentHTML('beforeend', `
       <div class="list-item" id="contact-${c.id}">
         <div class="list-item-body">
           <div class="list-item-title">${esc(c.name)} ${c.role_label?`<span class="badge badge-gray">${esc(c.role_label)}</span>`:''}</div>
@@ -518,7 +520,7 @@ function showAmenityResourcesModal(amenityId) {
     showModal(`
       <div class="modal-header"><div class="modal-title">Add-on Resources · ${esc(amenity.name)}</div><button class="modal-close" onclick="closeModal()">×</button></div>
       <div class="modal-body">
-        <div id="resources-list">${resources.length ? renderResources(resources) : '<div style="font-size:.875rem;color:var(--gray-400);margin-bottom:12px">No resources yet</div>'}</div>
+        <div id="resources-list">${resources.length ? renderResources(resources) : '<div data-empty="1" style="font-size:.875rem;color:var(--gray-400);margin-bottom:12px">No resources yet</div>'}</div>
         <div style="border-top:1px solid var(--gray-200);padding-top:14px;margin-top:12px">
           <div style="font-weight:600;margin-bottom:10px;font-size:.9rem">Add Resource</div>
           <div class="form-row">
@@ -541,7 +543,9 @@ async function addResource(amenityId) {
   if (!body.name) { toast('Resource name is required', 'warning'); return; }
   try {
     const r = await apiFetch('POST', `/api/amenities/${amenityId}/resources`, body);
-    document.getElementById('resources-list').insertAdjacentHTML('beforeend', `
+    const resourcesList = document.getElementById('resources-list');
+    resourcesList.querySelector('[data-empty]')?.remove();
+    resourcesList.insertAdjacentHTML('beforeend', `
       <div class="resource-item" id="res-${r.id}">
         <div><strong>${esc(r.name)}</strong> <span class="badge badge-gray">Max: ${r.quantity}</span></div>
         <button class="btn btn-danger btn-sm" onclick="deleteResource(${r.id},${amenityId})">Remove</button>

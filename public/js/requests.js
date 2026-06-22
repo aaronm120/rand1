@@ -358,7 +358,7 @@ function renderComments(comments, currentUser) {
 }
 
 function renderNotes(notes) {
-  if (!notes.length) return '<div style="font-size:.85rem;color:var(--gray-400)">No internal notes yet</div>';
+  if (!notes.length) return '<div data-empty="1" style="font-size:.85rem;color:var(--gray-400)">No internal notes yet</div>';
   return notes.map(n => `
     <div class="note-item">
       <div style="display:flex;justify-content:space-between">
@@ -440,7 +440,7 @@ async function addNote(reqId) {
       const div = document.createElement('div');
       div.className = 'note-item';
       div.innerHTML = `<div style="display:flex;justify-content:space-between"><span class="note-author">${esc(note.author_name)}</span><span class="note-time">${fmt(note.created_at)}</span></div><div class="note-body">${esc(note.content)}</div>`;
-      const empty = list.querySelector('[style*="gray"]');
+      const empty = list.querySelector('[data-empty]');
       if (empty) empty.remove();
       list.appendChild(div);
     }

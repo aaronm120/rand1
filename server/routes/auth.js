@@ -253,10 +253,18 @@ router.put('/users/:id', requirePMAdmin, (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id=?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  // Prevent demoting the last PM Admin
-  if (user.role === 'pm_admin' && role !== 'pm_admin') {
-    const adminCount = db.prepare("SELECT COUNT(*) as c FROM users WHERE role='pm_admin' AND active=1").get().c;
-    if (adminCount <= 1) return res.status(400).json({ error: 'Cannot change role of the only PM Admin' });
+  // Prevent removing the last active PM Admin (via role change or deactivation)
+  if (user.role === 'pm_admin') {
+    const roleChanging   = role !== undefined && role !== 'pm_admin';
+    const deactivating   = active !== undefined && !active;
+    if (roleChanging || deactivating) {
+      const remainingAdmins = db.prepare(
+        "SELECT COUNT(*) as c FROM users WHERE role='pm_admin' AND active=1 AND id!=?"
+      ).get(req.params.id).c;
+      if (remainingAdmins === 0) {
+        return res.status(400).json({ error: 'Cannot demote or deactivate the only active PM Admin' });
+      }
+    }
   }
 
   // Tenant roles require a tenant association

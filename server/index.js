@@ -34,6 +34,10 @@ const settingsUpload = multer({
   },
 });
 
+// ── Trust proxy (required when behind nginx/reverse proxy) ───────────────────
+// Tells express-rate-limit to read the real client IP from X-Forwarded-For
+app.set('trust proxy', 1);
+
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(cors({
   origin: process.env.CLIENT_URL || (process.env.NODE_ENV === 'production' ? false : `http://localhost:${process.env.PORT || 3000}`),

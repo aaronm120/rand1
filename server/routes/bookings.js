@@ -75,7 +75,7 @@ router.get('/calendar', requireAuth, (req, res) => {
 
   const y = parseInt(year), m = parseInt(month);
   const start = `${y}-${String(m).padStart(2,'0')}-01T00:00:00.000Z`;
-  const end = new Date(y, m, 1).toISOString(); // first day of next month
+  const end = new Date(Date.UTC(y, m, 1)).toISOString(); // first day of next month, UTC midnight
 
   const bookings = db.prepare(`
     SELECT b.id, b.start_time, b.end_time, b.status, b.headcount,
@@ -184,6 +184,9 @@ router.patch('/:id/cancel', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'Can only cancel your own booking' });
   }
   if (booking.status === 'cancelled') return res.status(400).json({ error: 'Already cancelled' });
+  if (!isPM(req.user) && new Date(booking.start_time) < new Date()) {
+    return res.status(400).json({ error: 'Cannot cancel a booking that has already started' });
+  }
   db.prepare('UPDATE bookings SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run('cancelled', req.params.id);
   auditLog(req.user.id, 'cancel_booking', 'booking', req.params.id, null, req.ip);
   const cancelled = bookingWithDetails(req.params.id);

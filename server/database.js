@@ -262,13 +262,23 @@ function initializeDatabase() {
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       tenant_id     INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
       building      TEXT NOT NULL,
-      suite         TEXT NOT NULL,
+      suite         TEXT,
       start_date    TEXT NOT NULL,
-      end_date      TEXT NOT NULL,
+      end_date      TEXT,
       monthly_rent  REAL,
       notes         TEXT,
       created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- ── Lease document attachments (PDF only) ────────────────────────────────
+    CREATE TABLE IF NOT EXISTS lease_attachments (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      lease_id       INTEGER NOT NULL REFERENCES leases(id) ON DELETE CASCADE,
+      original_name  TEXT NOT NULL,
+      stored_name    TEXT NOT NULL,
+      uploaded_by_id INTEGER NOT NULL REFERENCES users(id),
+      created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
     -- ── Notification preferences per user ─────────────────────────────────────
@@ -333,6 +343,37 @@ function initializeDatabase() {
   try { db.exec('ALTER TABLE leases ADD COLUMN renewal_option TEXT'); } catch (_) {}
   try { db.exec('ALTER TABLE tenants ADD COLUMN directory_hidden INTEGER DEFAULT 0'); } catch (_) {}
   try { db.exec('ALTER TABLE announcements ADD COLUMN expires_at DATETIME'); } catch (_) {}
+  // Make leases.end_date and leases.suite nullable (requires table recreation)
+  try {
+    const leaseSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='leases'").get();
+    if (leaseSchema && /end_date\s+TEXT\s+NOT\s+NULL/i.test(leaseSchema.sql)) {
+      db.exec(`
+        BEGIN;
+        CREATE TABLE leases_new (
+          id               INTEGER PRIMARY KEY AUTOINCREMENT,
+          tenant_id        INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+          building         TEXT NOT NULL,
+          suite            TEXT,
+          start_date       TEXT NOT NULL,
+          end_date         TEXT,
+          monthly_rent     REAL,
+          notes            TEXT,
+          created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+          sq_footage       REAL,
+          security_deposit REAL,
+          lease_type       TEXT,
+          renewal_option   TEXT
+        );
+        INSERT INTO leases_new (id, tenant_id, building, suite, start_date, end_date, monthly_rent, notes, created_at, updated_at, sq_footage, security_deposit, lease_type, renewal_option)
+          SELECT id, tenant_id, building, suite, start_date, end_date, monthly_rent, notes, created_at, updated_at, sq_footage, security_deposit, lease_type, renewal_option
+          FROM leases;
+        DROP TABLE leases;
+        ALTER TABLE leases_new RENAME TO leases;
+        COMMIT;
+      `);
+    }
+  } catch (_) {}
 
   // ── Seed default settings ─────────────────────────────────────────────────
   const upsert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

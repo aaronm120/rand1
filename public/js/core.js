@@ -239,6 +239,7 @@ function route(name, fn) { ROUTES[name] = fn; }
 async function navigate(page, params = {}) {
   state.page = page;
   closeSidebar();
+  closeModal();
   renderNav();
   const fn = ROUTES[page];
   if (!fn) return navigate('dashboard');
@@ -312,7 +313,7 @@ function renderImpersonationBanner() {
     <button onclick="exitImpersonation()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:inherit;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:.8rem;font-weight:600">
       Exit &amp; Return to Admin
     </button>`;
-  document.getElementById('app-shell').prepend(bar);
+  document.querySelector('.main-area').prepend(bar);
 }
 
 async function exitImpersonation() {
@@ -343,7 +344,7 @@ function showAuth(mode) {
   const loginImage = state.settings?.login_image;
   if (loginImage && imgPanel) {
     imgPanel.style.backgroundImage = `url("${loginImage.replace(/"/g, '%22')}")`;
-    imgPanel.style.display = '';
+    imgPanel.style.display = 'block';
     authScreen.classList.add('auth-split');
   } else if (imgPanel) {
     imgPanel.style.backgroundImage = '';

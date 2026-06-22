@@ -193,7 +193,7 @@ async function calToday() {
   const now = new Date();
   _calState.year = now.getFullYear();
   _calState.month = now.getMonth() + 1;
-  await loadCalendar(_calState.amenityId);
+  await loadCalendar();
 }
 
 async function calNav(dir) {
@@ -325,9 +325,10 @@ async function submitBooking() {
   const headcount = document.getElementById('bk-headcount')?.value;
   const notes     = document.getElementById('bk-notes')?.value;
 
-  if (!date)     { toast('Please select a date', 'warning'); return; }
-  if (!startVal) { toast('Please enter a start time', 'warning'); return; }
-  if (!endVal)   { toast('Please enter an end time', 'warning'); return; }
+  if (!amenityId) { toast('Please select a space to book', 'warning'); return; }
+  if (!date)      { toast('Please select a date', 'warning'); return; }
+  if (!startVal)  { toast('Please enter a start time', 'warning'); return; }
+  if (!endVal)    { toast('Please enter an end time', 'warning'); return; }
 
   const startMs = new Date(`${date}T${startVal}:00`).getTime();
   const endMs   = new Date(`${date}T${endVal}:00`).getTime();
@@ -451,13 +452,20 @@ function showAddBlackoutModal() {
 }
 
 async function saveBlackout() {
+  const startRaw = document.getElementById('bl-start')?.value;
+  const endRaw   = document.getElementById('bl-end')?.value;
+  if (!startRaw || !endRaw) { toast('Start and end are required', 'warning'); return; }
+  // Convert datetime-local (local time) to UTC ISO so it matches booking time format
+  const startISO = new Date(startRaw).toISOString();
+  const endISO   = new Date(endRaw).toISOString();
+  if (new Date(endISO) <= new Date(startISO)) { toast('End must be after start', 'warning'); return; }
   const body = {
     amenity_id: document.getElementById('bl-amenity')?.value,
-    start_time: document.getElementById('bl-start')?.value,
-    end_time:   document.getElementById('bl-end')?.value,
+    start_time: startISO,
+    end_time:   endISO,
     reason:     document.getElementById('bl-reason')?.value,
   };
-  if (!body.start_time || !body.end_time) { toast('Start and end are required', 'warning'); return; }
+  if (!body.amenity_id) { toast('Please select an amenity', 'warning'); return; }
   try {
     await apiFetch('POST', '/api/bookings/blackouts', body);
     closeModal(); toast('Blackout added', 'success'); loadBlackouts();

@@ -81,7 +81,16 @@ route('lease-detail', async ({ id }) => {
   if (!isPMAdmin(state.user)) { navigate('dashboard'); return; }
   if (!id) return navigate('leases');
 
-  const lease = await apiFetch('GET', `/api/leases/${id}`);
+  let lease, attachments;
+  try {
+    [lease, attachments] = await Promise.all([
+      apiFetch('GET', `/api/leases/${id}`),
+      apiFetch('GET', `/api/leases/${id}/attachments`),
+    ]);
+  } catch (e) {
+    setContent(`<div class="card"><div class="card-body"><p style="color:var(--danger)">Failed to load lease. Please refresh.</p></div></div>`);
+    return;
+  }
   setHeader(lease.tenant_name, 'Lease detail');
 
   const expDate = lease.lease_end ? new Date(lease.lease_end) : null;
@@ -91,6 +100,17 @@ route('lease-detail', async ({ id }) => {
     if (daysLeft < 0) expBadge = `<span class="badge badge-danger">Expired</span>`;
     else if (daysLeft <= 90) expBadge = `<span class="badge badge-warning">${daysLeft} days remaining</span>`;
     else expBadge = `<span class="badge badge-success">${daysLeft} days remaining</span>`;
+  }
+
+  function attachmentList(atts) {
+    if (!atts.length) return `<p style="font-size:.875rem;color:var(--gray-500);margin:0">No documents attached.</p>`;
+    return atts.map(a => `
+      <div class="lease-attachment-row" id="la-${a.id}">
+        <span class="lease-attachment-icon">📄</span>
+        <a href="/api/uploads/${esc(a.stored_name)}?token=${state.token}" target="_blank" class="lease-attachment-name">${esc(a.original_name)}</a>
+        <span class="lease-attachment-meta">${fmt(a.created_at)}</span>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:2px 8px" onclick="deleteLeaseAttachment(${id},${a.id})">Remove</button>
+      </div>`).join('');
   }
 
   setContent(`
@@ -120,8 +140,68 @@ route('lease-detail', async ({ id }) => {
         ${lease.notes ? `<div class="detail-section-title" style="margin-top:16px">Notes</div><div style="font-size:.9rem;white-space:pre-wrap;color:var(--gray-700)">${esc(lease.notes)}</div>` : ''}
       </div>
     </div>
+
+    <div class="card" style="max-width:720px;margin-top:16px">
+      <div class="card-header">
+        <div class="card-title">Documents</div>
+        <label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0">
+          Upload PDF
+          <input type="file" accept=".pdf,application/pdf" style="display:none" onchange="uploadLeaseAttachment(${id}, this)">
+        </label>
+      </div>
+      <div class="card-body" id="lease-attachments-list">
+        ${attachmentList(attachments)}
+      </div>
+    </div>
   `);
 });
+
+async function uploadLeaseAttachment(leaseId, input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const token = state.token;
+    const res = await fetch(`/api/leases/${leaseId}/attachments`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: fd,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Upload failed');
+    }
+    toast('Document uploaded', 'success');
+    const atts = await apiFetch('GET', `/api/leases/${leaseId}/attachments`);
+    const list = document.getElementById('lease-attachments-list');
+    if (list) list.innerHTML = atts.length
+      ? atts.map(a => `
+          <div class="lease-attachment-row" id="la-${a.id}">
+            <span class="lease-attachment-icon">📄</span>
+            <a href="/api/uploads/${esc(a.stored_name)}?token=${state.token}" target="_blank" class="lease-attachment-name">${esc(a.original_name)}</a>
+            <span class="lease-attachment-meta">${fmt(a.created_at)}</span>
+            <button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:2px 8px" onclick="deleteLeaseAttachment(${leaseId},${a.id})">Remove</button>
+          </div>`).join('')
+      : `<p style="font-size:.875rem;color:var(--gray-500);margin:0">No documents attached.</p>`;
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function deleteLeaseAttachment(leaseId, attachmentId) {
+  if (!confirm('Remove this document? This cannot be undone.')) return;
+  try {
+    await apiFetch('DELETE', `/api/leases/${leaseId}/attachments/${attachmentId}`);
+    const row = document.getElementById(`la-${attachmentId}`);
+    if (row) {
+      row.remove();
+      const list = document.getElementById('lease-attachments-list');
+      if (list && !list.querySelector('.lease-attachment-row'))
+        list.innerHTML = `<p style="font-size:.875rem;color:var(--gray-500);margin:0">No documents attached.</p>`;
+    }
+    toast('Document removed', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
 
 function showLeaseModal(id) {
   const tenants = window._leaseTenants || [];
@@ -146,7 +226,7 @@ function showLeaseModal(id) {
           <div class="form-group"><label class="form-label">Sq Footage</label><input type="number" class="form-input" id="ls-sqft" value="${l.sq_footage||''}"></div>
         </div>
         <div class="form-row">
-          <div class="form-group"><label class="form-label">Lease Start</label><input type="date" class="form-input" id="ls-start" value="${l.lease_start?.slice(0,10)||''}"></div>
+          <div class="form-group"><label class="form-label required">Lease Start</label><input type="date" class="form-input" id="ls-start" value="${l.lease_start?.slice(0,10)||''}"></div>
           <div class="form-group"><label class="form-label">Lease End</label><input type="date" class="form-input" id="ls-end" value="${l.lease_end?.slice(0,10)||''}"></div>
         </div>
         <div class="form-row">
