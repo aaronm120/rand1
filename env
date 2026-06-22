@@ -1,0 +1,32 @@
+# Randolph Office Center — Tenant Portal
+# Copy to .env and fill in your values
+
+# ── Server ──────────────────────────────────────────────
+PORT=3000
+NODE_ENV=production
+
+# Public URL of this portal — used to build links in notification emails.
+# Must be set for email deep links to work (e.g. "View in Portal" buttons).
+BASE_URL=https://your-portal-domain.com
+
+# ── Security ────────────────────────────────────────────
+# Generate with: node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+JWT_SECRET=change-this-to-a-long-random-secret-string
+
+# ── Database ────────────────────────────────────────────
+# Defaults to ./data/portal.db — override only if needed
+# DB_PATH=/opt/randolph-portal/data/portal.db
+
+# ── File uploads ────────────────────────────────────────
+# UPLOAD_DIR=./uploads
+# MAX_FILE_SIZE_MB=10
+
+# ── SMTP Email (optional) ───────────────────────────────
+# All SMTP settings can also be configured via Admin Panel → Settings.
+# Leave blank to start without email. Notifications will be silently skipped.
+# SMTP_HOST=smtp.sendgrid.net
+# SMTP_PORT=587
+# SMTP_USER=apikey
+# SMTP_PASS=SG.xxxxxxxxxxxx
+# FROM_EMAIL=portal@randolphofficecenter.com
+# FROM_NAME=Randolph Office Center
