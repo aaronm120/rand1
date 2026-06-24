@@ -72,6 +72,14 @@ const passwordChangeLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many password change attempts. Please try again in 15 minutes.' },
 });
+
+const mfaLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many verification attempts. Please sign in again.' },
+});
 app.use(express.static(path.join(__dirname, '../public')));
 
 // Serve uploaded files (attachment downloads require auth — handled via /api/uploads route)
@@ -87,6 +95,7 @@ app.post('/api/settings/upload', settingsUpload.single('image'), (req, res, next
 });
 
 app.post('/api/auth/login', loginLimiter);
+app.post('/api/auth/mfa/verify', mfaLimiter);
 app.post('/api/auth/forgot-password', forgotPasswordLimiter);
 app.put('/api/auth/password', passwordChangeLimiter);
 app.use('/api/auth',          require('./routes/auth'));
@@ -173,13 +182,54 @@ app.use((err, req, res, next) => {
 process.on('unhandledRejection', (reason) => { console.error('[Unhandled Rejection]', reason); });
 process.on('uncaughtException', (err) => { console.error('[Uncaught Exception]', err); process.exit(1); });
 
+// ── Booking reminder scheduler ────────────────────────────────────────────────
+function startReminderJob() {
+  const { notifyBookingReminder } = require('./lib/email');
+
+  const sendReminders = () => {
+    try {
+      const now = Date.now();
+      // Send reminders for bookings starting between 47h and 49h from now
+      const windowStart = new Date(now + 47 * 60 * 60 * 1000).toISOString();
+      const windowEnd   = new Date(now + 49 * 60 * 60 * 1000).toISOString();
+
+      const upcoming = db.prepare(`
+        SELECT b.id, b.start_time, b.end_time, b.headcount, b.user_id,
+               a.name as amenity_name, a.location as amenity_location,
+               u.email as user_email, u.name as user_name
+        FROM bookings b
+        JOIN amenities a ON b.amenity_id = a.id
+        JOIN users u ON b.user_id = u.id
+        LEFT JOIN notification_prefs np ON np.user_id = b.user_id
+        WHERE b.status = 'confirmed'
+          AND b.reminder_sent = 0
+          AND b.start_time >= ? AND b.start_time < ?
+          AND u.active = 1
+          AND COALESCE(np.booking_reminders, 1) = 1
+      `).all(windowStart, windowEnd);
+
+      for (const booking of upcoming) {
+        db.prepare('UPDATE bookings SET reminder_sent=1 WHERE id=?').run(booking.id);
+        notifyBookingReminder(booking).catch(err =>
+          console.warn('[Reminders] Email failed for booking', booking.id, '—', err.message)
+        );
+      }
+
+      if (upcoming.length > 0) {
+        console.log(`[Reminders] Sent ${upcoming.length} booking reminder(s)`);
+      }
+    } catch (err) {
+      console.error('[Reminders] Job error:', err.message);
+    }
+  };
+
+  sendReminders();
+  setInterval(sendReminders, 60 * 60 * 1000);
+}
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 initializeDatabase();
+startReminderJob();
 app.listen(PORT, () => {
   console.log(`Randolph Office Center Portal — http://localhost:${PORT}`);
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('  PM Admin : admin@randolphofficecenter.com / Admin123!');
-    console.log('  PM Staff : staff@randolphofficecenter.com / Staff123!');
-    console.log('  Tenant   : admin@acmecorp.com / Tenant123!');
-  }
 });

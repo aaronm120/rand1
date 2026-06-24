@@ -343,6 +343,16 @@ function initializeDatabase() {
   try { db.exec('ALTER TABLE leases ADD COLUMN renewal_option TEXT'); } catch (_) {}
   try { db.exec('ALTER TABLE tenants ADD COLUMN directory_hidden INTEGER DEFAULT 0'); } catch (_) {}
   try { db.exec('ALTER TABLE announcements ADD COLUMN expires_at DATETIME'); } catch (_) {}
+  try { db.exec('ALTER TABLE tenant_contacts ADD COLUMN door_code TEXT'); } catch (_) {}
+  try { db.exec('ALTER TABLE tenant_contacts ADD COLUMN directory_hidden INTEGER DEFAULT 0'); } catch (_) {}
+  try { db.exec('ALTER TABLE users ADD COLUMN mfa_secret TEXT'); } catch (_) {}
+  try { db.exec('ALTER TABLE users ADD COLUMN mfa_enabled INTEGER DEFAULT 0'); } catch (_) {}
+  try { db.exec('ALTER TABLE users ADD COLUMN mfa_backup_codes TEXT'); } catch (_) {}
+  try { db.exec('ALTER TABLE users ADD COLUMN force_password_change INTEGER DEFAULT 0'); } catch (_) {}
+  try { db.exec('ALTER TABLE notification_prefs ADD COLUMN booking_reminders INTEGER DEFAULT 1'); } catch (_) {}
+  try { db.exec('ALTER TABLE bookings ADD COLUMN reminder_sent INTEGER DEFAULT 0'); } catch (_) {}
+  db.exec('CREATE INDEX IF NOT EXISTS idx_reset_tokens_hash ON password_reset_tokens(token_hash)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_tenant_contacts_tenant ON tenant_contacts(tenant_id)');
   // Make leases.end_date and leases.suite nullable (requires table recreation)
   try {
     const leaseSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='leases'").get();
@@ -382,69 +392,84 @@ function initializeDatabase() {
   }
 
   // ── Seed PM Admin ─────────────────────────────────────────────────────────
-  const adminExists = db.prepare("SELECT id FROM users WHERE email = 'admin@randolphofficecenter.com'").get();
+  // In production, set SEED_ADMIN_PASSWORD and SEED_ADMIN_EMAIL env vars.
+  // In development, falls back to demo credentials only when no admin exists.
+  const adminExists = db.prepare("SELECT id FROM users WHERE role = 'pm_admin'").get();
   if (!adminExists) {
-    const hash = bcrypt.hashSync('Admin123!', 10);
+    const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@randolphofficecenter.com';
+    const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+    if (!adminPassword && process.env.NODE_ENV === 'production') {
+      console.error('[FATAL] No PM Admin account exists and SEED_ADMIN_PASSWORD is not set. Set SEED_ADMIN_PASSWORD to create the initial admin account.');
+      process.exit(1);
+    }
+    const hash = bcrypt.hashSync(adminPassword || 'Admin123!', 10);
     const adminId = db.prepare(
       `INSERT INTO users (email, name, password_hash, role, active)
-       VALUES ('admin@randolphofficecenter.com', 'Building Management', ?, 'pm_admin', 1)`
-    ).run(hash).lastInsertRowid;
+       VALUES (?, 'Building Management', ?, 'pm_admin', 1)`
+    ).run(adminEmail, hash).lastInsertRowid;
     db.prepare('INSERT OR IGNORE INTO notification_prefs (user_id) VALUES (?)').run(adminId);
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[SEED] PM Admin created: ${adminEmail} / ${adminPassword || 'Admin123!'} — change this password immediately.`);
+    }
   }
 
-  // ── Seed PM User ──────────────────────────────────────────────────────────
-  const pmUserExists = db.prepare("SELECT id FROM users WHERE email = 'staff@randolphofficecenter.com'").get();
-  if (!pmUserExists) {
-    const hash = bcrypt.hashSync('Staff123!', 10);
-    const pmUserId = db.prepare(
-      `INSERT INTO users (email, name, password_hash, role, active)
-       VALUES ('staff@randolphofficecenter.com', 'Property Staff', ?, 'pm_user', 1)`
-    ).run(hash).lastInsertRowid;
-    db.prepare('INSERT OR IGNORE INTO notification_prefs (user_id) VALUES (?)').run(pmUserId);
-  }
+  // ── Seed demo data (development only) ────────────────────────────────────
+  if (process.env.NODE_ENV !== 'production') {
+    const pmUserExists = db.prepare("SELECT id FROM users WHERE email = 'staff@randolphofficecenter.com'").get();
+    if (!pmUserExists) {
+      const hash = bcrypt.hashSync('Staff123!', 10);
+      const pmUserId = db.prepare(
+        `INSERT INTO users (email, name, password_hash, role, active)
+         VALUES ('staff@randolphofficecenter.com', 'Property Staff', ?, 'pm_user', 1)`
+      ).run(hash).lastInsertRowid;
+      db.prepare('INSERT OR IGNORE INTO notification_prefs (user_id) VALUES (?)').run(pmUserId);
+    }
 
-  // ── Seed demo tenants ─────────────────────────────────────────────────────
-  const tenantCount = db.prepare('SELECT COUNT(*) as c FROM tenants').get().c;
-  if (tenantCount === 0) {
-    const t1 = db.prepare("INSERT INTO tenants (name, building, suite) VALUES ('Acme Corp', '728', 'Suite 200')").run().lastInsertRowid;
-    const t2 = db.prepare("INSERT INTO tenants (name, building, suite) VALUES ('Bright Ventures LLC', '730', 'Suite 150')").run().lastInsertRowid;
-    const t3 = db.prepare("INSERT INTO tenants (name, building, suite) VALUES ('Sterling Law Partners', '732', 'Suite 300')").run().lastInsertRowid;
+    const tenantCount = db.prepare('SELECT COUNT(*) as c FROM tenants').get().c;
+    if (tenantCount === 0) {
+      const t1 = db.prepare("INSERT INTO tenants (name, building, suite) VALUES ('Acme Corp', '728', 'Suite 200')").run().lastInsertRowid;
+      const t2 = db.prepare("INSERT INTO tenants (name, building, suite) VALUES ('Bright Ventures LLC', '730', 'Suite 150')").run().lastInsertRowid;
+      const t3 = db.prepare("INSERT INTO tenants (name, building, suite) VALUES ('Sterling Law Partners', '732', 'Suite 300')").run().lastInsertRowid;
 
-    // Tenant admin for Acme
-    const hash1 = bcrypt.hashSync('Tenant123!', 10);
-    const ta1 = db.prepare(
-      `INSERT INTO users (email, name, password_hash, role, tenant_id, title, phone, active)
-       VALUES ('admin@acmecorp.com', 'Alice Johnson', ?, 'tenant_admin', ?, 'Office Manager', '312-555-0200', 1)`
-    ).run(hash1, t1).lastInsertRowid;
-    db.prepare('INSERT OR IGNORE INTO notification_prefs (user_id) VALUES (?)').run(ta1);
+      const hash1 = bcrypt.hashSync('Tenant123!', 10);
+      const ta1 = db.prepare(
+        `INSERT INTO users (email, name, password_hash, role, tenant_id, title, phone, active)
+         VALUES ('admin@acmecorp.com', 'Alice Johnson', ?, 'tenant_admin', ?, 'Office Manager', '312-555-0200', 1)`
+      ).run(hash1, t1).lastInsertRowid;
+      db.prepare('INSERT OR IGNORE INTO notification_prefs (user_id) VALUES (?)').run(ta1);
 
-    // Tenant user for Acme
-    const hash2 = bcrypt.hashSync('Tenant123!', 10);
-    const tu1 = db.prepare(
-      `INSERT INTO users (email, name, password_hash, role, tenant_id, title, phone, active)
-       VALUES ('bob@acmecorp.com', 'Bob Williams', ?, 'tenant_user', ?, 'Engineer', '312-555-0201', 1)`
-    ).run(hash2, t1).lastInsertRowid;
-    db.prepare('INSERT OR IGNORE INTO notification_prefs (user_id) VALUES (?)').run(tu1);
+      const hash2 = bcrypt.hashSync('Tenant123!', 10);
+      const tu1 = db.prepare(
+        `INSERT INTO users (email, name, password_hash, role, tenant_id, title, phone, active)
+         VALUES ('bob@acmecorp.com', 'Bob Williams', ?, 'tenant_user', ?, 'Engineer', '312-555-0201', 1)`
+      ).run(hash2, t1).lastInsertRowid;
+      db.prepare('INSERT OR IGNORE INTO notification_prefs (user_id) VALUES (?)').run(tu1);
 
-    // Tenant admin for Bright Ventures
-    const hash3 = bcrypt.hashSync('Tenant123!', 10);
-    const ta2 = db.prepare(
-      `INSERT INTO users (email, name, password_hash, role, tenant_id, title, phone, active)
-       VALUES ('info@brightventures.com', 'Carol Davis', ?, 'tenant_admin', ?, 'CEO', '312-555-0300', 1)`
-    ).run(hash3, t2).lastInsertRowid;
-    db.prepare('INSERT OR IGNORE INTO notification_prefs (user_id) VALUES (?)').run(ta2);
+      const hash3 = bcrypt.hashSync('Tenant123!', 10);
+      const ta2 = db.prepare(
+        `INSERT INTO users (email, name, password_hash, role, tenant_id, title, phone, active)
+         VALUES ('info@brightventures.com', 'Carol Davis', ?, 'tenant_admin', ?, 'CEO', '312-555-0300', 1)`
+      ).run(hash3, t2).lastInsertRowid;
+      db.prepare('INSERT OR IGNORE INTO notification_prefs (user_id) VALUES (?)').run(ta2);
 
-    // Named contact for Sterling Law
-    db.prepare("INSERT INTO tenant_contacts (tenant_id, name, title, email, phone, is_primary) VALUES (?, 'James Sterling', 'Managing Partner', 'j.sterling@sterlinglaw.com', '312-555-0400', 1)").run(t3);
+      db.prepare("INSERT INTO tenant_contacts (tenant_id, name, title, email, phone, is_primary) VALUES (?, 'James Sterling', 'Managing Partner', 'j.sterling@sterlinglaw.com', '312-555-0400', 1)").run(t3);
+    }
   }
 
   // ── Seed request categories ────────────────────────────────────────────────
   const catCount = db.prepare('SELECT COUNT(*) as c FROM request_categories').get().c;
   if (catCount === 0) {
-    const cats = ['HVAC', 'Electrical', 'Plumbing', 'Cleaning', 'Building Access', 'General'];
+    const cats = ['HVAC', 'Electrical', 'Plumbing', 'Cleaning', 'Building Access', 'Elevator', 'General'];
     cats.forEach((name, i) =>
       db.prepare('INSERT INTO request_categories (name, sort_order) VALUES (?, ?)').run(name, i)
     );
+  } else {
+    // Add Elevator to existing installations if not already present
+    const elevatorExists = db.prepare("SELECT id FROM request_categories WHERE name = 'Elevator'").get();
+    if (!elevatorExists) {
+      const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), 0) as m FROM request_categories').get().m;
+      db.prepare('INSERT INTO request_categories (name, sort_order) VALUES (?, ?)').run('Elevator', maxOrder + 1);
+    }
   }
 
   // ── Seed Rooftop amenity ───────────────────────────────────────────────────

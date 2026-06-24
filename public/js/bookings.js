@@ -372,7 +372,8 @@ route('booking-detail', async ({ id }) => {
   const booking = await apiFetch('GET', `/api/bookings/${id}`);
   setHeader(booking.amenity_name, `${fmtDate(booking.start_time)}`);
 
-  const isMine = booking.user_id === u.id || isPM(u);
+  const isMine = booking.user_id === u.id || isPM(u)
+    || (u.role === 'tenant_admin' && booking.tenant_id === u.tenant_id);
   const canCancel = isMine && booking.status === 'confirmed' && new Date(booking.start_time) > new Date();
   const resHtml = booking.resources?.length ? booking.resources.map(r => `
     <div style="display:flex;justify-content:space-between;font-size:.875rem;padding:4px 0;border-bottom:1px solid var(--gray-100)">

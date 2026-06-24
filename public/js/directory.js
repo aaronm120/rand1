@@ -32,7 +32,7 @@ route('directory', async () => {
       <div class="directory-person contact">
         <div class="directory-avatar" style="background:var(--primary-light);color:var(--primary)">📋</div>
         <div class="directory-person-info">
-          <div class="directory-person-name">${esc(c.name)} <span style="font-size:.7rem;color:var(--gray-500)">Named Contact</span></div>
+          <div class="directory-person-name">${esc(c.name)} <span style="font-size:.7rem;color:var(--gray-500)">Named Contact</span>${isPM(u) && c.directory_hidden ? ' <span style="font-size:.7rem;color:var(--gray-400)">(hidden from directory)</span>' : ''}</div>
           ${c.title ? `<div class="directory-person-meta">${esc(c.title)}</div>` : ''}
           ${c.email ? `<div class="directory-person-meta"><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></div>` : ''}
           ${c.phone ? `<div class="directory-person-meta"><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></div>` : ''}
@@ -131,11 +131,12 @@ function renderDirTenantCard(tenant) {
   const u = state.user;
   const { users = [], contacts = [] } = tenant;
   const visibleUsers = isPM(u) ? users : users.filter(usr => !usr.directory_opt_out);
-  const allPeople = [...contacts.map(c => `
+  const visibleContacts = isPM(u) ? contacts : contacts.filter(c => !c.directory_hidden);
+  const allPeople = [...visibleContacts.map(c => `
       <div class="directory-person contact">
         <div class="directory-avatar" style="background:var(--primary-light);color:var(--primary)">📋</div>
         <div class="directory-person-info">
-          <div class="directory-person-name">${esc(c.name)} <span style="font-size:.7rem">Named Contact</span></div>
+          <div class="directory-person-name">${esc(c.name)} <span style="font-size:.7rem">Named Contact</span>${isPM(u) && c.directory_hidden ? ' <span style="font-size:.7rem;color:var(--gray-400)">(hidden)</span>' : ''}</div>
           ${c.title?`<div class="directory-person-meta">${esc(c.title)}</div>`:''}
           ${c.email?`<div class="directory-person-meta"><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></div>`:''}
           ${c.phone?`<div class="directory-person-meta"><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></div>`:''}

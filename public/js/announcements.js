@@ -67,7 +67,7 @@ route('announcement-detail', async ({ id }) => {
   const pmActions = isPM(u) ? `
     <div style="display:flex;gap:8px;margin-top:18px">
       <button class="btn btn-secondary btn-sm" onclick="showEditAnnModal(${ann.id})">Edit</button>
-      <button class="btn btn-danger btn-sm" onclick="deleteAnnouncement(${ann.id})">Delete</button>
+      ${isPMAdmin(u) ? `<button class="btn btn-danger btn-sm" onclick="deleteAnnouncement(${ann.id})">Delete</button>` : ''}
     </div>` : '';
 
   setContent(`
@@ -133,7 +133,7 @@ route('new-announcement', async () => {
         </div>
         <div style="display:flex;gap:10px;margin-top:18px">
           <button class="btn btn-secondary" onclick="navigate('announcements')">Cancel</button>
-          <button class="btn btn-primary" onclick="submitAnnouncement()">Publish Announcement</button>
+          <button class="btn btn-primary" id="ann-submit" onclick="submitAnnouncement()">Publish Announcement</button>
         </div>
       </div>
     </div>
@@ -177,17 +177,25 @@ async function submitAnnouncement() {
 
   const expires = document.getElementById('ann-expires')?.value;
   const body = { title, content, target_type: target, urgent, pinned, expires_at: expires || null };
-  if (target === 'building') body.target_building = document.getElementById('ann-building')?.value;
+  if (target === 'building') {
+    body.target_building = document.getElementById('ann-building')?.value;
+    if (!body.target_building) { toast('Please select a building', 'warning'); return; }
+  }
   if (target === 'tenant') {
     body.target_tenant_id = document.getElementById('ann-tenant')?.value;
     if (!body.target_tenant_id) { toast('Please select a tenant', 'warning'); return; }
   }
 
+  const btn = document.getElementById('ann-submit');
+  if (btn) { btn.disabled = true; btn.textContent = 'Publishing…'; }
   try {
     await apiFetch('POST', '/api/announcements', body);
     toast('Announcement published', 'success');
     navigate('announcements');
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Publish Announcement'; }
+    toast(e.message, 'error');
+  }
 }
 
 function showEditAnnModal(id) {

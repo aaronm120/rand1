@@ -8,7 +8,7 @@ const router = express.Router();
 router.get('/', requireAuth, (req, res) => {
   const showAll = req.query.all === 'true' && isPM(req.user);
   const where = showAll ? '' : 'WHERE active = 1';
-  res.json(db.prepare(`SELECT * FROM request_categories ${where} ORDER BY sort_order, name`).all());
+  res.json(db.prepare(`SELECT * FROM request_categories ${where} ORDER BY name`).all());
 });
 
 // POST /api/categories — PM Admin only

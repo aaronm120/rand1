@@ -74,6 +74,7 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="/js/core.js"></script>
 <script src="/js/auth.js"></script>
 <script src="/js/dashboard.js"></script>
@@ -115,6 +116,7 @@
               state.user.impersonatedByName = payload.impersonatedByName;
             }
           }
+          if (state.user.force_password_change && !state.user.impersonatedBy) { showAuth('force-pw-change'); return; }
           showApp();
           return;
         }
@@ -138,6 +140,11 @@
           state.user.impersonatedBy     = payload.impersonatedBy;
           state.user.impersonatedByName = payload.impersonatedByName;
         }
+      }
+      // Impersonating users bypass the force-change gate (PM is viewing, not logging in as them)
+      if (state.user.force_password_change && !state.user.impersonatedBy) {
+        showAuth('force-pw-change');
+        return;
       }
       showApp();
     } catch(_) {

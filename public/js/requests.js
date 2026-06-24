@@ -153,12 +153,15 @@ route('new-request', async () => {
           </div>
           <div class="form-group">
             <label class="form-label required">Priority</label>
-            <select class="form-select" id="req-priority">
+            <select class="form-select" id="req-priority" onchange="checkUrgentPriority()">
               <option value="low">Low</option>
               <option value="medium" selected>Medium</option>
               <option value="high">High</option>
               <option value="urgent">Urgent</option>
             </select>
+            <div id="urgent-contact-msg" style="display:none;margin-top:8px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;color:#dc2626;font-size:.875rem;font-weight:500">
+              For urgent requests, please also call or text Mary Beirne at <a href="tel:7737757434" style="color:#dc2626;font-weight:700">(773) 775-7434</a>.
+            </div>
           </div>
         </div>
         <div class="form-group">
@@ -178,6 +181,12 @@ route('new-request', async () => {
     </div>
   `);
 });
+
+function checkUrgentPriority() {
+  const isUrgent = document.getElementById('req-priority')?.value === 'urgent';
+  const msg = document.getElementById('urgent-contact-msg');
+  if (msg) msg.style.display = isUrgent ? '' : 'none';
+}
 
 async function submitRequest() {
   const u = state.user;
@@ -226,7 +235,10 @@ route('request-detail', async ({ id }) => {
   setHeader(`Request #${req.id}`, `${req.category_name} · ${req.tenant_name}`);
 
   const isSubmitter = !isPM(u) && req.submitted_by_id === u.id;
-  const canClose = isSubmitter && req.status !== 'closed';
+  const tenantAdminCanClose = u.role === 'tenant_admin'
+    && req.tenant_id === u.tenant_id
+    && state.settings?.tenant_admin_close_all_requests === '1';
+  const canClose = (isSubmitter || tenantAdminCanClose) && req.status !== 'closed';
 
   const statusOptions = ['open','in_progress','pending_tenant','resolved','closed'];
   const pmPanel = isPM(u) ? `
@@ -432,6 +444,8 @@ async function addComment(reqId) {
 async function addNote(reqId) {
   const content = document.getElementById('new-note')?.value.trim();
   if (!content) { toast('Note cannot be empty', 'warning'); return; }
+  const btn = document.querySelector(`button[onclick="addNote(${reqId})"]`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
   try {
     const note = await apiFetch('POST', `/api/requests/${reqId}/notes`, { content });
     document.getElementById('new-note').value = '';
@@ -444,6 +458,10 @@ async function addNote(reqId) {
       if (empty) empty.remove();
       list.appendChild(div);
     }
+    if (btn) { btn.disabled = false; btn.textContent = 'Add Note'; }
     toast('Note added', 'success');
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Add Note'; }
+    toast(e.message, 'error');
+  }
 }

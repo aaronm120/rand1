@@ -7,7 +7,7 @@ route('dashboard', async () => {
   setHeader('Dashboard', u.tenant_name ? `${u.tenant_name} · ${u.tenant_building ? u.tenant_building + ' W. Randolph' : ''}` : 'Property Management');
 
   const s = state.settings;
-  const greeting = `Welcome back, ${u.name.split(' ')[0]}`;
+  const greeting = `Welcome back, ${u.name?.split(' ')?.[0] || u.name || 'there'}`;
 
   // Load data in parallel
   const [requests, announcements, bookings] = await Promise.all([

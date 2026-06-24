@@ -1,7 +1,7 @@
 const express = require('express');
 const path = require('path');
 const multer = require('multer');
-const { db, auditLog } = require('../database');
+const { db, auditLog, getSettings } = require('../database');
 const { requireAuth, requirePM, requirePMAdmin, isPM } = require('../middleware/auth');
 const { notifyNewRequest, notifyRequestStatus, notifyNewComment } = require('../lib/email');
 
@@ -211,7 +211,11 @@ router.patch('/:id/status', requireAuth, (req, res) => {
 
   if (!isPM(req.user)) {
     if (req_.tenant_id !== req.user.tenant_id) return res.status(403).json({ error: 'Access denied' });
-    if (req_.submitted_by_id !== req.user.id) return res.status(403).json({ error: 'You can only close requests you submitted' });
+    const tenantAdminCanClose = req.user.role === 'tenant_admin'
+      && getSettings().tenant_admin_close_all_requests === '1';
+    if (req_.submitted_by_id !== req.user.id && !tenantAdminCanClose) {
+      return res.status(403).json({ error: 'You can only close requests you submitted' });
+    }
     if (status !== 'closed') return res.status(403).json({ error: 'You can only close a request, not change its status otherwise' });
   }
 

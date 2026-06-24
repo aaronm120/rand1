@@ -77,7 +77,8 @@ router.get('/calendar', requireAuth, (req, res) => {
   const start = `${y}-${String(m).padStart(2,'0')}-01T00:00:00.000Z`;
   const end = new Date(Date.UTC(y, m, 1)).toISOString(); // first day of next month, UTC midnight
 
-  const bookings = db.prepare(`
+  const pm = isPM(req.user);
+  const rawBookings = db.prepare(`
     SELECT b.id, b.start_time, b.end_time, b.status, b.headcount,
            b.user_id, b.tenant_id, u.name as user_name, t.name as tenant_name
     FROM bookings b JOIN users u ON b.user_id = u.id JOIN tenants t ON b.tenant_id = t.id
@@ -85,6 +86,13 @@ router.get('/calendar', requireAuth, (req, res) => {
     AND b.start_time >= ? AND b.start_time < ?
     ORDER BY b.start_time
   `).all(amenity_id, start, end);
+
+  // Non-PM users see names only for their own tenant's bookings; other bookings show as anonymous
+  const bookings = rawBookings.map(b => {
+    if (pm || b.tenant_id === req.user.tenant_id) return b;
+    const { user_name, tenant_name, ...rest } = b;
+    return rest;
+  });
 
   const blackouts = db.prepare(`
     SELECT id, start_time, end_time, reason FROM blackouts
@@ -135,35 +143,44 @@ router.post('/', requireAuth, (req, res) => {
     return res.status(400).json({ error: `Headcount exceeds capacity of ${amenity.capacity}` });
   }
 
-  if (hasBlackout(amenity_id, start_time, end_time)) {
-    return res.status(409).json({ error: 'This time is blocked by building management' });
-  }
-  if (hasConflict(amenity_id, start_time, end_time)) {
-    return res.status(409).json({ error: 'Time slot already booked. Please choose a different time.' });
-  }
-
   const tenantId = isPM(req.user)
     ? (req.body.tenant_id || req.user.tenant_id)
     : req.user.tenant_id;
   if (!tenantId) return res.status(400).json({ error: 'Tenant association required' });
 
-  const result = db.prepare(`
-    INSERT INTO bookings (amenity_id, user_id, tenant_id, start_time, end_time, headcount, notes, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed')
-  `).run(amenity_id, req.user.id, tenantId, start_time, end_time, hc, notes || null);
+  // Wrap conflict check + INSERT in a transaction to prevent double-booking under concurrent requests
+  let bookingId;
+  try {
+    bookingId = db.transaction(() => {
+      if (hasBlackout(amenity_id, start_time, end_time)) {
+        throw Object.assign(new Error('This time is blocked by building management'), { status: 409 });
+      }
+      if (hasConflict(amenity_id, start_time, end_time)) {
+        throw Object.assign(new Error('Time slot already booked. Please choose a different time.'), { status: 409 });
+      }
 
-  const bookingId = result.lastInsertRowid;
+      const result = db.prepare(`
+        INSERT INTO bookings (amenity_id, user_id, tenant_id, start_time, end_time, headcount, notes, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed')
+      `).run(amenity_id, req.user.id, tenantId, start_time, end_time, hc, notes || null);
 
-  // Save add-on resources
-  if (Array.isArray(resources)) {
-    for (const r of resources) {
-      if (r.resource_id && r.quantity > 0) {
-        const res_ = db.prepare('SELECT id, quantity FROM amenity_resources WHERE id=? AND amenity_id=? AND active=1').get(r.resource_id, amenity_id);
-        if (res_) {
-          db.prepare('INSERT INTO booking_resources (booking_id, resource_id, quantity) VALUES (?, ?, ?)').run(bookingId, r.resource_id, Math.min(r.quantity, res_.quantity));
+      const id = result.lastInsertRowid;
+
+      if (Array.isArray(resources)) {
+        for (const r of resources) {
+          if (r.resource_id && r.quantity > 0) {
+            const res_ = db.prepare('SELECT id, quantity FROM amenity_resources WHERE id=? AND amenity_id=? AND active=1').get(r.resource_id, amenity_id);
+            if (res_) {
+              db.prepare('INSERT INTO booking_resources (booking_id, resource_id, quantity) VALUES (?, ?, ?)').run(id, r.resource_id, Math.min(r.quantity, res_.quantity));
+            }
+          }
         }
       }
-    }
+
+      return id;
+    })();
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message });
   }
 
   auditLog(req.user.id, 'create_booking', 'booking', bookingId, { amenity_id, start_time, end_time }, req.ip);
@@ -180,7 +197,10 @@ router.post('/', requireAuth, (req, res) => {
 router.patch('/:id/cancel', requireAuth, (req, res) => {
   const booking = db.prepare('SELECT * FROM bookings WHERE id=?').get(req.params.id);
   if (!booking) return res.status(404).json({ error: 'Booking not found' });
-  if (!isPM(req.user) && booking.user_id !== req.user.id) {
+  const canManage = isPM(req.user)
+    || booking.user_id === req.user.id
+    || (req.user.role === 'tenant_admin' && booking.tenant_id === req.user.tenant_id);
+  if (!canManage) {
     return res.status(403).json({ error: 'Can only cancel your own booking' });
   }
   if (booking.status === 'cancelled') return res.status(400).json({ error: 'Already cancelled' });

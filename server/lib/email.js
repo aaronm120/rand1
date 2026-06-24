@@ -230,6 +230,37 @@ async function notifyNewComment(request, comment, authorIsPM) {
   }
 }
 
+async function notifyBookingReminder(booking) {
+  const s = getSettings();
+  const portalName = s.building_name || 'Randolph Office Center';
+  const startDate = new Date(booking.start_time).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const startTime = new Date(booking.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const endTime   = new Date(booking.end_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+      <div style="background:#1B3A6B;padding:16px 20px;border-radius:6px 6px 0 0">
+        <div style="color:#fff;font-size:1rem;font-weight:700">${esc(portalName)}</div>
+        <div style="color:#a8c4e0;font-size:.8rem;margin-top:2px">Booking Reminder</div>
+      </div>
+      <div style="border:1px solid #e5e7eb;border-top:none;padding:24px;border-radius:0 0 6px 6px">
+        <h2 style="color:#1B3A6B;margin-top:0">Upcoming Booking — 48-Hour Reminder</h2>
+        <p>This is a reminder that your reservation starts in approximately 48 hours.</p>
+        <table style="border-collapse:collapse;width:100%">
+          <tr><td style="padding:4px 8px;color:#666">Amenity</td><td style="padding:4px 8px"><strong>${esc(booking.amenity_name)}</strong></td></tr>
+          ${booking.amenity_location ? `<tr><td style="padding:4px 8px;color:#666">Location</td><td style="padding:4px 8px">${esc(booking.amenity_location)}</td></tr>` : ''}
+          <tr><td style="padding:4px 8px;color:#666">Date</td><td style="padding:4px 8px">${startDate}</td></tr>
+          <tr><td style="padding:4px 8px;color:#666">Time</td><td style="padding:4px 8px">${startTime} – ${endTime}</td></tr>
+          <tr><td style="padding:4px 8px;color:#666">Headcount</td><td style="padding:4px 8px">${booking.headcount}</td></tr>
+        </table>
+        ${viewBtn('booking-detail', booking.id) || '<p style="color:#666;font-size:12px;margin-top:24px">Log in to the portal to manage your booking.</p>'}
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:.8rem;color:#9ca3af">
+          To stop receiving booking reminders, update your notification preferences in your profile.
+        </div>
+      </div>
+    </div>`;
+  await sendMail({ to: booking.user_email, subject: `Booking Reminder — ${esc(booking.amenity_name)} on ${startDate}`, html });
+}
+
 async function sendPasswordResetEmail(user, resetUrl) {
   const s = getSettings();
   const portalName = s.building_name || 'Randolph Office Center';
@@ -258,4 +289,4 @@ async function sendPasswordResetEmail(user, resetUrl) {
   await sendMail({ to: user.email, subject: `Reset your password — ${portalName}`, html });
 }
 
-module.exports = { sendMail, notifyNewRequest, notifyRequestStatus, notifyBookingConfirm, notifyBookingCancelled, notifyAnnouncement, notifyNewComment, sendPasswordResetEmail };
+module.exports = { sendMail, notifyNewRequest, notifyRequestStatus, notifyBookingConfirm, notifyBookingCancelled, notifyBookingReminder, notifyAnnouncement, notifyNewComment, sendPasswordResetEmail };

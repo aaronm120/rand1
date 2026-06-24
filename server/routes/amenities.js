@@ -1,6 +1,7 @@
 const express = require('express');
 const { db, auditLog } = require('../database');
 const { requireAuth, requirePMAdmin, requirePM, isPM } = require('../middleware/auth');
+const { notifyBookingCancelled } = require('../lib/email');
 
 const router = express.Router();
 
@@ -40,13 +41,47 @@ router.patch('/:id', requirePMAdmin, (req, res) => {
   const { name, description, location, capacity, active } = req.body;
   const a = db.prepare('SELECT * FROM amenities WHERE id=?').get(req.params.id);
   if (!a) return res.status(404).json({ error: 'Not found' });
-  db.prepare(`UPDATE amenities SET name=?, description=?, location=?, capacity=?, active=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-    .run(name ?? a.name, description ?? a.description, location ?? a.location,
-      capacity ? parseInt(capacity) : a.capacity, active !== undefined ? (active ? 1 : 0) : a.active, req.params.id);
-  auditLog(req.user.id, 'update_amenity', 'amenity', req.params.id, null, req.ip);
+
+  const newActive = active !== undefined ? (active ? 1 : 0) : a.active;
+
+  let cancelledBookings = [];
+
+  db.transaction(() => {
+    db.prepare(`UPDATE amenities SET name=?, description=?, location=?, capacity=?, active=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(name ?? a.name, description ?? a.description, location ?? a.location,
+        capacity ? parseInt(capacity) : a.capacity, newActive, req.params.id);
+
+    // When deactivating, cancel all future confirmed bookings atomically
+    if (a.active === 1 && newActive === 0) {
+      cancelledBookings = db.prepare(`
+        SELECT b.*, a2.name as amenity_name, a2.location as amenity_location,
+               u.name as user_name, u.email as user_email,
+               t.name as tenant_name, t.building as tenant_building
+        FROM bookings b
+        JOIN amenities a2 ON b.amenity_id = a2.id
+        JOIN users u ON b.user_id = u.id
+        JOIN tenants t ON b.tenant_id = t.id
+        WHERE b.amenity_id = ? AND b.status = 'confirmed' AND b.start_time > datetime('now')
+      `).all(req.params.id);
+
+      for (const booking of cancelledBookings) {
+        db.prepare(`UPDATE bookings SET status='cancelled', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(booking.id);
+      }
+    }
+  })();
+
+  auditLog(req.user.id, 'update_amenity', 'amenity', req.params.id, { active: newActive }, req.ip);
+
+  // Fire audit logs and emails after the transaction commits
+  for (const booking of cancelledBookings) {
+    auditLog(req.user.id, 'cancel_booking', 'booking', booking.id, { reason: 'amenity_deactivated' }, req.ip);
+    notifyBookingCancelled(booking, req.user.id).catch(err => console.warn('[Email] Notification failed:', err.message));
+  }
+  const cancelledCount = cancelledBookings.length;
+
   const updated = db.prepare('SELECT * FROM amenities WHERE id=?').get(req.params.id);
   updated.resources = db.prepare('SELECT * FROM amenity_resources WHERE amenity_id=? ORDER BY name').all(req.params.id);
-  res.json(updated);
+  res.json({ ...updated, cancelled_bookings: cancelledCount });
 });
 
 // POST /api/amenities/:id/resources — add add-on resource
@@ -70,8 +105,8 @@ router.patch('/resources/:resId', requirePMAdmin, (req, res) => {
   res.json(db.prepare('SELECT * FROM amenity_resources WHERE id=?').get(req.params.resId));
 });
 
-// DELETE /api/amenities/resources/:resId — delete resource
-router.delete('/resources/:resId', requirePMAdmin, (req, res) => {
+// DELETE /api/amenities/:id/resources/:resId — delete resource
+router.delete('/:id/resources/:resId', requirePMAdmin, (req, res) => {
   const r = db.prepare('SELECT id FROM amenity_resources WHERE id=?').get(req.params.resId);
   if (!r) return res.status(404).json({ error: 'Resource not found' });
   db.prepare('DELETE FROM amenity_resources WHERE id=?').run(req.params.resId);

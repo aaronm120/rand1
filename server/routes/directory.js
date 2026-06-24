@@ -44,8 +44,9 @@ router.get('/', requireAuth, (req, res) => {
       );
     }
 
-    // Named contacts
-    tenant.contacts = db.prepare('SELECT * FROM tenant_contacts WHERE tenant_id=? ORDER BY is_primary DESC, name ASC').all(tenant.id);
+    // Named contacts — PM sees all, tenants only see non-hidden contacts
+    const contactFilter = pm ? '' : 'AND directory_hidden = 0';
+    tenant.contacts = db.prepare(`SELECT id, tenant_id, name, title, email, phone, is_primary, directory_hidden, created_at FROM tenant_contacts WHERE tenant_id=? ${contactFilter} ORDER BY is_primary DESC, name ASC`).all(tenant.id);
     tenant.users = users;
   }
 

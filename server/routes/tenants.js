@@ -24,10 +24,14 @@ router.get('/', requireAuth, (req, res) => {
 
 // GET /api/tenants/:id
 router.get('/:id', requireAuth, (req, res) => {
-  if (!isPM(req.user) && req.user.tenant_id !== parseInt(req.params.id)) {
+  const tenantId = parseInt(req.params.id, 10);
+  if (!Number.isInteger(tenantId) || tenantId <= 0) {
+    return res.status(400).json({ error: 'Invalid tenant ID' });
+  }
+  if (!isPM(req.user) && req.user.tenant_id !== tenantId) {
     return res.status(403).json({ error: 'Access denied' });
   }
-  const tenant = db.prepare('SELECT * FROM tenants WHERE id=?').get(req.params.id);
+  const tenant = db.prepare('SELECT * FROM tenants WHERE id=?').get(tenantId);
   if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
   tenant.contacts = db.prepare('SELECT * FROM tenant_contacts WHERE tenant_id=? ORDER BY is_primary DESC, name').all(tenant.id);
   tenant.users = db.prepare('SELECT id, name, email, role, title, phone, directory_opt_out, active FROM users WHERE tenant_id=? ORDER BY name').all(tenant.id);
@@ -54,6 +58,9 @@ router.patch('/:id', requireAuth, (req, res) => {
   }
 
   const { name, building, suite, active, directory_hidden, cascade_users } = req.body;
+  if (isPM(req.user) && building && !['728', '730', '732'].includes(String(building))) {
+    return res.status(400).json({ error: 'Invalid building — must be 728, 730, or 732' });
+  }
   const newBuilding = isPM(req.user) && building ? building : tenant.building;
   const newActive = isPM(req.user) && active !== undefined ? (active ? 1 : 0) : tenant.active;
   const newDirHidden = isPM(req.user) && directory_hidden !== undefined ? (directory_hidden ? 1 : 0) : (tenant.directory_hidden ?? 0);
@@ -79,15 +86,18 @@ router.post('/:id/contacts', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'Tenant admin access required' });
   }
 
-  const { name, title, email, phone, is_primary } = req.body;
+  const { name, email, phone, is_primary, door_code } = req.body;
+  const title = req.body.title ?? req.body.role_label ?? null;
+  const directory_hidden = isPM(req.user) ? (req.body.directory_hidden ? 1 : 0) : 0;
   if (!name?.trim()) return res.status(400).json({ error: 'Contact name required' });
 
   if (is_primary) {
     db.prepare('UPDATE tenant_contacts SET is_primary=0 WHERE tenant_id=?').run(tenant.id);
   }
 
-  const result = db.prepare('INSERT INTO tenant_contacts (tenant_id, name, title, email, phone, is_primary) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(tenant.id, name.trim(), title || null, email || null, phone || null, is_primary ? 1 : 0);
+  const result = db.prepare(
+    'INSERT INTO tenant_contacts (tenant_id, name, title, email, phone, is_primary, door_code, directory_hidden) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(tenant.id, name.trim(), title, email || null, phone || null, is_primary ? 1 : 0, isPM(req.user) ? (door_code || null) : null, directory_hidden);
   res.status(201).json(db.prepare('SELECT * FROM tenant_contacts WHERE id=?').get(result.lastInsertRowid));
 });
 
@@ -99,13 +109,25 @@ router.patch('/contacts/:contactId', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'Tenant admin access required' });
   }
 
-  const { name, title, email, phone, is_primary } = req.body;
+  const { name, email, phone, is_primary, door_code } = req.body;
+  const title = req.body.title !== undefined ? req.body.title : (req.body.role_label !== undefined ? req.body.role_label : contact.title);
+  const directory_hidden = isPM(req.user) && req.body.directory_hidden !== undefined
+    ? (req.body.directory_hidden ? 1 : 0)
+    : contact.directory_hidden ?? 0;
   if (is_primary) {
     db.prepare('UPDATE tenant_contacts SET is_primary=0 WHERE tenant_id=?').run(contact.tenant_id);
   }
-  db.prepare('UPDATE tenant_contacts SET name=?, title=?, email=?, phone=?, is_primary=? WHERE id=?')
-    .run(name ?? contact.name, title ?? contact.title, email ?? contact.email, phone ?? contact.phone,
-      is_primary !== undefined ? (is_primary ? 1 : 0) : contact.is_primary, req.params.contactId);
+  db.prepare('UPDATE tenant_contacts SET name=?, title=?, email=?, phone=?, is_primary=?, door_code=?, directory_hidden=? WHERE id=?')
+    .run(
+      name ?? contact.name,
+      title,
+      email ?? contact.email,
+      phone ?? contact.phone,
+      is_primary !== undefined ? (is_primary ? 1 : 0) : contact.is_primary,
+      isPM(req.user) ? (door_code !== undefined ? (door_code || null) : contact.door_code) : contact.door_code,
+      directory_hidden,
+      req.params.contactId,
+    );
   res.json(db.prepare('SELECT * FROM tenant_contacts WHERE id=?').get(req.params.contactId));
 });
 

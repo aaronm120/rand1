@@ -48,7 +48,7 @@ async function renderUsersTab(el) {
   function userRow(u) {
     const canImpersonate = u.role !== 'pm_admin' && u.active;
     return `<tr>
-      <td><strong>${esc(u.name)}</strong></td>
+      <td><strong>${esc(u.name)}</strong>${u.mfa_enabled ? ' <span class="badge badge-success" title="Two-factor auth enabled" style="font-size:.65rem;padding:1px 5px;vertical-align:middle">2FA</span>' : ''}</td>
       <td>${esc(u.email)}</td>
       <td>${roleBadge(u.role)}</td>
       <td>${u.tenant_name ? `${esc(u.tenant_name)} · ${buildingTag(u.tenant_building)}` : '—'}</td>
@@ -131,12 +131,28 @@ function showUserModal(id) {
         <div class="form-group" id="u-dir-optout-group">
           <label class="form-check"><input type="checkbox" id="u-dir-optout" ${u.directory_opt_out?'checked':''}> <span>Hide from Building Directory</span></label>
         </div>
-        ${!editing ? `<div class="form-group"><label class="form-label required">Password</label><input class="form-input" id="u-password" type="password" placeholder="Min 8 characters"></div>` : ''}
+        ${!editing ? `
+        <div class="form-group"><label class="form-label required">Password</label><input class="form-input" id="u-password" type="password" placeholder="Min 8 characters"></div>
+        <div class="form-group"><label class="form-check"><input type="checkbox" id="u-force-pw-change" checked> <span>Require password change on first login</span></label></div>` : ''}
         ${editing ? `<div class="form-group"><label class="form-label">New Password <span style="font-weight:400;font-size:.8rem">(leave blank to keep current)</span></label><input class="form-input" id="u-password" type="password" placeholder="Leave blank to keep current"></div>` : ''}
-        ${editing ? `<div class="form-group"><label class="form-check"><input type="checkbox" id="u-active" ${u.active?'checked':''}> <span>Account Active</span></label></div>` : ''}
+        ${editing ? `
+        <div class="form-group"><label class="form-check"><input type="checkbox" id="u-active" ${u.active?'checked':''}> <span>Account Active</span></label></div>
+        <div class="form-group">
+          <div class="toggle-row" style="padding:0">
+            <div>
+              <div class="toggle-label">Email Notifications</div>
+              <div class="toggle-desc">Service requests, bookings, and announcements</div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="u-notifications" ${(u.notif_requests || u.notif_bookings || u.notif_announcements) ? 'checked' : ''}>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>` : ''}
       </div>
       <div class="modal-footer">
         ${editing ? `<button class="btn btn-danger" onclick="deleteUser(${id})">Delete User</button>` : ''}
+        ${editing && u.mfa_enabled ? `<button class="btn btn-ghost btn-sm" style="color:var(--warning,#b45309)" onclick="adminResetMFA(${id})">Reset MFA</button>` : ''}
         <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
         <button class="btn btn-primary" onclick="saveUser(${id||'null'})">${editing?'Save':'Create User'}</button>
       </div>`);
@@ -178,18 +194,33 @@ async function deleteUser(id) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
+async function adminResetMFA(userId) {
+  if (!confirm('Reset two-factor authentication for this user? They will need to set it up again.')) return;
+  try {
+    await apiFetch('POST', `/api/auth/mfa/admin-reset/${userId}`);
+    const u = (window._adminUsers || []).find(x => x.id === userId);
+    if (u) u.mfa_enabled = 0;
+    closeModal();
+    toast('MFA has been reset for this user', 'success');
+    showAdminTab('users');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
 async function saveUser(id) {
+  const notifEl = document.getElementById('u-notifications');
   const body = {
-    name:               document.getElementById('u-name')?.value.trim(),
-    email:              document.getElementById('u-email')?.value.trim(),
-    role:               document.getElementById('u-role')?.value,
-    tenant_id:          document.getElementById('u-tenant')?.value || null,
-    title:              document.getElementById('u-title')?.value || null,
-    phone:              document.getElementById('u-phone')?.value || null,
-    door_code:          document.getElementById('u-door-code')?.value || null,
-    directory_opt_out:  document.getElementById('u-dir-optout')?.checked ? 1 : 0,
-    password:           document.getElementById('u-password')?.value || undefined,
-    active:             id ? (document.getElementById('u-active')?.checked ? 1 : 0) : 1,
+    name:                  document.getElementById('u-name')?.value.trim(),
+    email:                 document.getElementById('u-email')?.value.trim(),
+    role:                  document.getElementById('u-role')?.value,
+    tenant_id:             document.getElementById('u-tenant')?.value || null,
+    title:                 document.getElementById('u-title')?.value || null,
+    phone:                 document.getElementById('u-phone')?.value || null,
+    door_code:             document.getElementById('u-door-code')?.value || null,
+    directory_opt_out:     document.getElementById('u-dir-optout')?.checked ? 1 : 0,
+    password:              document.getElementById('u-password')?.value || undefined,
+    active:                id ? (document.getElementById('u-active')?.checked ? 1 : 0) : 1,
+    notifications_enabled: notifEl ? (notifEl.checked ? 1 : 0) : undefined,
+    force_password_change: !id ? (document.getElementById('u-force-pw-change')?.checked ? 1 : 0) : undefined,
   };
   if (!body.name || !body.email) { toast('Name and email are required', 'warning'); return; }
   if (!id && !body.password) { toast('Password is required for new users', 'warning'); return; }
@@ -319,8 +350,15 @@ function showTenantContactsModal(tenantId) {
     const renderContacts = (cs) => cs.map(c => `
       <div class="list-item" id="contact-${c.id}">
         <div class="list-item-body">
-          <div class="list-item-title">${esc(c.name)} ${c.role_label?`<span class="badge badge-gray">${esc(c.role_label)}</span>`:''}</div>
-          <div class="list-item-meta">${[c.email,c.phone].filter(Boolean).map(esc).join(' · ')}</div>
+          <div class="list-item-title">
+            ${esc(c.name)}
+            ${c.title ? `<span class="badge badge-gray">${esc(c.title)}</span>` : ''}
+            ${c.directory_hidden ? '<span class="badge badge-gray" style="font-size:.7rem">Hidden from Directory</span>' : ''}
+          </div>
+          <div class="list-item-meta">
+            ${[c.email, c.phone].filter(Boolean).map(esc).join(' · ')}
+            ${c.door_code ? `<span style="color:var(--gray-400)"> · Door: ${esc(c.door_code)}</span>` : ''}
+          </div>
         </div>
         <button class="btn btn-danger btn-sm" onclick="deleteContact(${c.id},${tenantId})">Remove</button>
       </div>`).join('');
@@ -331,10 +369,20 @@ function showTenantContactsModal(tenantId) {
         <div id="contacts-list">${contacts.length ? renderContacts(contacts) : '<div data-empty="1" style="font-size:.875rem;color:var(--gray-400);margin-bottom:12px">No contacts yet</div>'}</div>
         <div style="border-top:1px solid var(--gray-200);padding-top:14px;margin-top:12px">
           <div style="font-weight:600;margin-bottom:10px;font-size:.9rem">Add Contact</div>
-          <div class="form-row"><div class="form-group"><label class="form-label required">Name</label><input class="form-input" id="nc-name"></div>
-            <div class="form-group"><label class="form-label">Role / Label</label><input class="form-input" id="nc-role" placeholder="e.g. Billing, Emergency"></div></div>
-          <div class="form-row"><div class="form-group"><label class="form-label">Email</label><input class="form-input" id="nc-email" type="email"></div>
-            <div class="form-group"><label class="form-label">Phone</label><input class="form-input" id="nc-phone"></div></div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label required">Name</label><input class="form-input" id="nc-name"></div>
+            <div class="form-group"><label class="form-label">Role / Label</label><input class="form-input" id="nc-role" placeholder="e.g. Billing, Emergency"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="nc-email" type="email"></div>
+            <div class="form-group"><label class="form-label">Phone</label><input class="form-input" id="nc-phone"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Door Code <span style="font-size:.75rem;font-weight:400;color:var(--gray-500)">(PM view only)</span></label><input class="form-input" id="nc-door-code" placeholder="e.g. 4821" autocomplete="off"></div>
+            <div class="form-group" style="justify-content:flex-end;padding-top:24px">
+              <label class="form-check"><input type="checkbox" id="nc-dir-hidden"> <span>Hide from Building Directory</span></label>
+            </div>
+          </div>
           <button class="btn btn-secondary btn-sm" onclick="addContact(${tenantId})">+ Add Contact</button>
         </div>
       </div>
@@ -345,10 +393,12 @@ function showTenantContactsModal(tenantId) {
 
 async function addContact(tenantId) {
   const body = {
-    name:       document.getElementById('nc-name')?.value.trim(),
-    role_label: document.getElementById('nc-role')?.value || null,
-    email:      document.getElementById('nc-email')?.value || null,
-    phone:      document.getElementById('nc-phone')?.value || null,
+    name:             document.getElementById('nc-name')?.value.trim(),
+    role_label:       document.getElementById('nc-role')?.value || null,
+    email:            document.getElementById('nc-email')?.value || null,
+    phone:            document.getElementById('nc-phone')?.value || null,
+    door_code:        document.getElementById('nc-door-code')?.value || null,
+    directory_hidden: document.getElementById('nc-dir-hidden')?.checked ? 1 : 0,
   };
   if (!body.name) { toast('Contact name is required', 'warning'); return; }
   try {
@@ -358,12 +408,21 @@ async function addContact(tenantId) {
     contactsList.insertAdjacentHTML('beforeend', `
       <div class="list-item" id="contact-${c.id}">
         <div class="list-item-body">
-          <div class="list-item-title">${esc(c.name)} ${c.role_label?`<span class="badge badge-gray">${esc(c.role_label)}</span>`:''}</div>
-          <div class="list-item-meta">${[c.email,c.phone].filter(Boolean).map(esc).join(' · ')}</div>
+          <div class="list-item-title">
+            ${esc(c.name)}
+            ${c.title ? `<span class="badge badge-gray">${esc(c.title)}</span>` : ''}
+            ${c.directory_hidden ? '<span class="badge badge-gray" style="font-size:.7rem">Hidden from Directory</span>' : ''}
+          </div>
+          <div class="list-item-meta">
+            ${[c.email, c.phone].filter(Boolean).map(esc).join(' · ')}
+            ${c.door_code ? `<span style="color:var(--gray-400)"> · Door: ${esc(c.door_code)}</span>` : ''}
+          </div>
         </div>
         <button class="btn btn-danger btn-sm" onclick="deleteContact(${c.id},${tenantId})">Remove</button>
       </div>`);
-    ['nc-name','nc-role','nc-email','nc-phone'].forEach(id => { const el=document.getElementById(id); if(el)el.value=''; });
+    ['nc-name','nc-role','nc-email','nc-phone','nc-door-code'].forEach(id => { const el=document.getElementById(id); if(el)el.value=''; });
+    const dirHidden = document.getElementById('nc-dir-hidden');
+    if (dirHidden) dirHidden.checked = false;
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -377,7 +436,8 @@ async function deleteContact(id, tenantId) {
 
 // ── CATEGORIES TAB ─────────────────────────────────────────────────
 async function renderCategoriesTab(el) {
-  const cats = await apiFetch('GET', '/api/categories');
+  const cats = await apiFetch('GET', '/api/categories?all=true');
+  window._adminCategories = cats;
 
   el.innerHTML = `
     <div class="card">
@@ -404,7 +464,7 @@ function showCategoryModal(id) {
   const editing = !!id;
   const loadAndShow = async () => {
     let c = {};
-    if (editing) c = await apiFetch('GET', `/api/categories/${id}`).catch(()=>({}));
+    if (editing) c = (window._adminCategories || []).find(x => x.id === id) || {};
 
     showModal(`
       <div class="modal-header"><div class="modal-title">${editing?'Edit':'Add'} Category</div><button class="modal-close" onclick="closeModal()">×</button></div>
@@ -441,7 +501,7 @@ async function saveCategory(id) {
 
 // ── AMENITIES TAB ─────────────────────────────────────────────────
 async function renderAmenitiesTab(el) {
-  const amenities = await apiFetch('GET', '/api/amenities');
+  const amenities = await apiFetch('GET', '/api/amenities?all=true');
 
   el.innerHTML = `
     <div class="card">
@@ -450,10 +510,10 @@ async function renderAmenitiesTab(el) {
         <button class="btn btn-primary btn-sm" onclick="showAmenityModal()">+ Add Amenity</button>
       </div>
       ${amenities.map(a => `
-        <div class="list-item">
+        <div class="list-item" style="${a.active===0?'opacity:.55':''}">
           <div class="list-item-icon" style="background:var(--warning-bg)">🏛️</div>
           <div class="list-item-body">
-            <div class="list-item-title">${esc(a.name)} <span class="badge badge-gray">Cap: ${a.capacity}</span></div>
+            <div class="list-item-title">${esc(a.name)} <span class="badge badge-gray">Cap: ${a.capacity}</span>${a.active===0?' <span class="badge badge-danger">Inactive</span>':''}</div>
             ${a.location?`<div class="list-item-meta">${esc(a.location)}</div>`:''}
             ${a.resources?.length?`<div class="list-item-meta">${a.resources.length} resource${a.resources.length!==1?'s':''} available</div>`:''}
           </div>
@@ -500,9 +560,19 @@ async function saveAmenity(id) {
   };
   if (!body.name) { toast('Name is required', 'warning'); return; }
   try {
-    if (id) await apiFetch('PATCH', `/api/amenities/${id}`, body);
-    else await apiFetch('POST', '/api/amenities', body);
-    closeModal(); toast('Amenity saved', 'success'); showAdminTab('amenities');
+    if (id) {
+      const result = await apiFetch('PATCH', `/api/amenities/${id}`, body);
+      closeModal();
+      if (result.cancelled_bookings > 0) {
+        toast(`Amenity saved. ${result.cancelled_bookings} future booking${result.cancelled_bookings !== 1 ? 's were' : ' was'} cancelled and tenants notified.`, 'warning');
+      } else {
+        toast('Amenity saved', 'success');
+      }
+    } else {
+      await apiFetch('POST', '/api/amenities', body);
+      closeModal(); toast('Amenity saved', 'success');
+    }
+    showAdminTab('amenities');
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -679,6 +749,11 @@ async function renderSettingsTab(el) {
         <div class="form-group">
           <label class="form-label">Maintenance Message</label>
           <textarea class="form-textarea" id="s-maint-msg" rows="2" placeholder="Message shown to tenants during maintenance…">${esc(s.maintenance_message||'')}</textarea>
+        </div>
+        <div style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-500);margin-top:28px;margin-bottom:12px">Tenant Permissions</div>
+        <div class="form-group">
+          <label class="form-check"><input type="checkbox" id="s-tenant-admin-close" ${s.tenant_admin_close_all_requests==='1'?'checked':''}> <span>Allow Tenant Admin to close all tenant requests</span></label>
+          <div class="form-hint" style="margin-top:4px;margin-left:24px">When enabled, tenant admins can mark any request as closed — not just ones they submitted.</div>
         </div>
         <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
 
@@ -883,8 +958,9 @@ async function saveSettings() {
     smtp_user:        document.getElementById('s-smtp-user')?.value || undefined,
     smtp_from:        document.getElementById('s-from-email')?.value || undefined,
     email_enabled:        document.getElementById('s-email-enabled')?.checked ? '1' : '0',
-    maintenance_mode:     document.getElementById('s-maint-mode')?.checked ? '1' : '0',
-    maintenance_message:  document.getElementById('s-maint-msg')?.value || undefined,
+    maintenance_mode:                   document.getElementById('s-maint-mode')?.checked ? '1' : '0',
+    maintenance_message:                document.getElementById('s-maint-msg')?.value || undefined,
+    tenant_admin_close_all_requests:    document.getElementById('s-tenant-admin-close')?.checked ? '1' : '0',
     login_image:      document.getElementById('s-login-image-url')?.value || '',
     banner_enabled:       document.getElementById('s-banner-enabled')?.checked ? '1' : '0',
     banner_image_url: document.getElementById('s-banner-url')?.value || '',

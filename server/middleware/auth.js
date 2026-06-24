@@ -2,13 +2,10 @@ const jwt = require('jsonwebtoken');
 const { db } = require('../database');
 
 if (!process.env.JWT_SECRET) {
-  if (process.env.NODE_ENV === 'production') {
-    console.error('[FATAL] JWT_SECRET environment variable is not set. Refusing to start.');
-    process.exit(1);
-  }
-  console.warn('[WARN] JWT_SECRET not set — using insecure dev default. Set JWT_SECRET in .env before deploying.');
+  console.error('[FATAL] JWT_SECRET environment variable is not set. Refusing to start.');
+  process.exit(1);
 }
-const JWT_SECRET = process.env.JWT_SECRET || 'roc-portal-dev-secret-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET;
 
 // Roles: pm_admin > pm_user > tenant_admin > tenant_user
 const PM_ROLES = ['pm_admin', 'pm_user'];

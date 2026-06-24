@@ -127,8 +127,11 @@ router.patch('/:id', requirePM, (req, res) => {
     if (isNaN(d.getTime())) return res.status(400).json({ error: 'Invalid expires_at date' });
     expiresTime = d.toISOString();
   }
+  const newTitle   = title?.trim()   || ann.title;
+  const newContent = content?.trim() || ann.content;
+  if (!newTitle || !newContent) return res.status(400).json({ error: 'Title and content cannot be empty' });
   db.prepare(`UPDATE announcements SET title=?, content=?, urgent=?, pinned=?, expires_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-    .run(title || ann.title, content || ann.content, urgent !== undefined ? (urgent ? 1 : 0) : ann.urgent,
+    .run(newTitle, newContent, urgent !== undefined ? (urgent ? 1 : 0) : ann.urgent,
       pinned !== undefined ? (pinned ? 1 : 0) : ann.pinned, expiresTime, req.params.id);
   auditLog(req.user.id, 'update_announcement', 'announcement', req.params.id, null, req.ip);
   res.json(db.prepare('SELECT * FROM announcements WHERE id=?').get(req.params.id));
