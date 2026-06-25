@@ -113,4 +113,18 @@ router.delete('/:id/resources/:resId', requirePMAdmin, (req, res) => {
   res.json({ message: 'Deleted' });
 });
 
+// DELETE /api/amenities/:id — PM Admin only, blocked if any bookings exist
+router.delete('/:id', requirePMAdmin, (req, res) => {
+  const amenity = db.prepare('SELECT * FROM amenities WHERE id=?').get(req.params.id);
+  if (!amenity) return res.status(404).json({ error: 'Amenity not found' });
+  const bookingCount = db.prepare('SELECT COUNT(*) as cnt FROM bookings WHERE amenity_id=?').get(req.params.id).cnt;
+  if (bookingCount > 0) {
+    return res.status(409).json({ error: `Cannot delete — ${bookingCount} booking${bookingCount !== 1 ? 's' : ''} reference this amenity. Mark it inactive instead.` });
+  }
+  db.prepare('DELETE FROM amenity_resources WHERE amenity_id=?').run(req.params.id);
+  db.prepare('DELETE FROM amenities WHERE id=?').run(req.params.id);
+  auditLog(req.user.id, 'delete_amenity', 'amenity', req.params.id, { name: amenity.name }, req.ip);
+  res.json({ message: 'Deleted' });
+});
+
 module.exports = router;

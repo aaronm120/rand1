@@ -34,4 +34,17 @@ router.patch('/:id', requirePMAdmin, (req, res) => {
   res.json(db.prepare('SELECT * FROM request_categories WHERE id=?').get(req.params.id));
 });
 
+// DELETE /api/categories/:id — PM Admin only, blocked if any requests use it
+router.delete('/:id', requirePMAdmin, (req, res) => {
+  const cat = db.prepare('SELECT * FROM request_categories WHERE id=?').get(req.params.id);
+  if (!cat) return res.status(404).json({ error: 'Category not found' });
+  const requestCount = db.prepare('SELECT COUNT(*) as cnt FROM service_requests WHERE category_id=?').get(req.params.id).cnt;
+  if (requestCount > 0) {
+    return res.status(409).json({ error: `Cannot delete — ${requestCount} service request${requestCount !== 1 ? 's' : ''} use this category. Mark it inactive instead.` });
+  }
+  db.prepare('DELETE FROM request_categories WHERE id=?').run(req.params.id);
+  auditLog(req.user.id, 'delete_category', 'category', req.params.id, { name: cat.name }, req.ip);
+  res.json({ message: 'Deleted' });
+});
+
 module.exports = router;

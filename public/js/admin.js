@@ -508,6 +508,7 @@ async function renderCategoriesTab(el) {
           <div style="display:flex;gap:6px">
             <span class="badge ${c.active?'badge-success':'badge-gray'}">${c.active?'Active':'Inactive'}</span>
             <button class="btn btn-ghost btn-sm" onclick="showCategoryModal(${c.id})">Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteCategory(${c.id})">Delete</button>
           </div>
         </div>`).join('') || `<div class="empty-state"><div class="empty-icon">🏷</div><div class="empty-title">No categories</div></div>`}
     </div>`;
@@ -535,6 +536,16 @@ function showCategoryModal(id) {
       </div>`);
   };
   loadAndShow();
+}
+
+async function deleteCategory(id) {
+  const cat = (window._adminCategories || []).find(c => c.id === id);
+  if (!confirm(`Delete category "${cat?.name || id}"? This cannot be undone.`)) return;
+  try {
+    await apiFetch('DELETE', `/api/categories/${id}`);
+    toast('Category deleted', 'success');
+    showAdminTab('categories');
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 async function saveCategory(id) {
@@ -573,6 +584,7 @@ async function renderAmenitiesTab(el) {
           <div style="display:flex;gap:6px">
             <button class="btn btn-ghost btn-sm" onclick="showAmenityResourcesModal(${a.id})">Resources</button>
             <button class="btn btn-ghost btn-sm" onclick="showAmenityModal(${a.id})">Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteAmenity(${a.id})">Delete</button>
           </div>
         </div>`).join('') || `<div class="empty-state"><div class="empty-icon">🏛️</div><div class="empty-title">No amenities configured</div></div>`}
     </div>`;
@@ -601,6 +613,15 @@ function showAmenityModal(id) {
       </div>`);
   };
   loadAndShow();
+}
+
+async function deleteAmenity(id) {
+  if (!confirm('Delete this amenity? This cannot be undone.')) return;
+  try {
+    await apiFetch('DELETE', `/api/amenities/${id}`);
+    toast('Amenity deleted', 'success');
+    showAdminTab('amenities');
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 async function saveAmenity(id) {
