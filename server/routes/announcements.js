@@ -62,8 +62,8 @@ router.post('/', requirePM, (req, res) => {
   if (title.trim().length > 300) return res.status(400).json({ error: 'Title must be 300 characters or fewer' });
   if (content.trim().length > 10000) return res.status(400).json({ error: 'Content must be 10,000 characters or fewer' });
   if (!TARGET_TYPES.includes(target_type)) return res.status(400).json({ error: 'Invalid target type' });
-  if (target_type === 'building' && !['728','730','732'].includes(target_building)) {
-    return res.status(400).json({ error: 'Invalid building — must be 728, 730, or 732' });
+  if (target_type === 'building' && !['720','730','732'].includes(target_building)) {
+    return res.status(400).json({ error: 'Invalid building — must be 720, 730, or 732' });
   }
   if (target_type === 'tenant') {
     if (!target_tenant_id) return res.status(400).json({ error: 'A tenant must be selected for tenant-targeted announcements' });
@@ -84,7 +84,8 @@ router.post('/', requirePM, (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     title.trim(), content.trim(), req.user.id, target_type,
-    target_building || null, target_tenant_id || null,
+    target_type === 'building' ? (target_building || null) : null,
+    target_type === 'tenant'   ? (target_tenant_id || null) : null,
     urgent ? 1 : 0, pinned ? 1 : 0, publishTime, expiresTime
   );
 

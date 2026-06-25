@@ -71,6 +71,8 @@ router.post('/', requirePMAdmin, (req, res) => {
   if (!tenant_id || !start_date) {
     return res.status(400).json({ error: 'Tenant and start date are required' });
   }
+  if (isNaN(new Date(start_date))) return res.status(400).json({ error: 'Invalid start date' });
+  if (end_date && isNaN(new Date(end_date))) return res.status(400).json({ error: 'Invalid end date' });
   if (end_date && start_date >= end_date) {
     return res.status(400).json({ error: 'Lease end date must be after start date' });
   }
@@ -102,6 +104,8 @@ router.patch('/:id', requirePMAdmin, (req, res) => {
   const start_date = req.body.lease_start  !== undefined ? req.body.lease_start  : (req.body.start_date ?? lease.start_date);
   const end_date   = req.body.lease_end    !== undefined ? req.body.lease_end    : (req.body.end_date   ?? lease.end_date);
 
+  if (start_date && isNaN(new Date(start_date))) return res.status(400).json({ error: 'Invalid start date' });
+  if (end_date && isNaN(new Date(end_date))) return res.status(400).json({ error: 'Invalid end date' });
   if (start_date && end_date && start_date >= end_date) {
     return res.status(400).json({ error: 'Lease end date must be after start date' });
   }

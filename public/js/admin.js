@@ -275,7 +275,7 @@ function showTenantModal(id) {
         <div class="form-row">
           <div class="form-group"><label class="form-label required">Building</label>
             <select class="form-select" id="t-building">
-              ${['728','730','732'].map(b=>`<option value="${b}" ${t.building===b?'selected':''}>${b} W. Randolph</option>`).join('')}
+              ${['720','730','732'].map(b=>`<option value="${b}" ${t.building===b?'selected':''}>${b} W. Randolph</option>`).join('')}
             </select></div>
           <div class="form-group"><label class="form-label">Suite</label><input class="form-input" id="t-suite" value="${esc(t.suite||'')}"></div>
         </div>

@@ -237,7 +237,7 @@ tbody tr:hover{background:var(--gray-50)}
 
 /* Directory */
 .building-tag{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:99px;font-size:.72rem;font-weight:700}
-.building-728{background:#dbeafe;color:#1d4ed8}
+.building-720{background:#dbeafe;color:#1d4ed8}
 .building-730{background:#dcfce7;color:#15803d}
 .building-732{background:#fef3c7;color:#b45309}
 .building-section{margin-bottom:24px}

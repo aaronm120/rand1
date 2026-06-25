@@ -150,7 +150,7 @@ function updateTargetFields() {
   if (target === 'building') {
     container.innerHTML = `<div class="form-group"><label class="form-label required">Building</label>
       <select class="form-select" id="ann-building">
-        <option value="728">728 W. Randolph</option>
+        <option value="720">720 W. Randolph</option>
         <option value="730">730 W. Randolph</option>
         <option value="732">732 W. Randolph</option>
       </select></div>`;

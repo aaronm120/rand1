@@ -1,5 +1,5 @@
 const express = require('express');
-const { db, getSettings } = require('../database');
+const { db, getSettings, auditLog } = require('../database');
 const { requirePMAdmin } = require('../middleware/auth');
 
 const router = express.Router();
@@ -26,8 +26,11 @@ router.get('/', (req, res) => {
   res.json(pub);
 });
 
-// Full settings including SMTP — PM Admin only
-router.get('/admin', requirePMAdmin, (req, res) => res.json(getSettings()));
+// Full settings — PM Admin only; smtp_pass masked (never sent to client)
+router.get('/admin', requirePMAdmin, (req, res) => {
+  const s = getSettings();
+  res.json({ ...s, smtp_pass: s.smtp_pass ? '••••••••' : '' });
+});
 
 // PUT /api/settings — PM Admin only
 router.put('/', requirePMAdmin, (req, res) => {
@@ -46,12 +49,18 @@ router.put('/', requirePMAdmin, (req, res) => {
     'maintenance_mode', 'maintenance_message',
   ];
   const upsert = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+  const changedKeys = [];
   db.transaction((data) => {
     for (const key of allowed) {
-      if (key in data) upsert.run(key, data[key] ?? '');
+      if (!(key in data)) continue;
+      if (key === 'smtp_pass' && data[key] === '••••••••') continue;
+      upsert.run(key, data[key] ?? '');
+      changedKeys.push(key);
     }
   })(req.body);
-  res.json(getSettings());
+  auditLog(req.user.id, 'update_settings', 'settings', null, { keys: changedKeys }, req.ip);
+  const s = getSettings();
+  res.json({ ...s, smtp_pass: s.smtp_pass ? '••••••••' : '' });
 });
 
 // POST /api/settings/upload — image upload (multer injected by index.js)

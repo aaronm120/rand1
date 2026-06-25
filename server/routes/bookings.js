@@ -231,8 +231,11 @@ router.get('/blackouts/list', requirePM, (req, res) => {
 router.post('/blackouts', requirePMAdmin, (req, res) => {
   const { amenity_id, start_time, end_time, reason } = req.body;
   if (!amenity_id || !start_time || !end_time) return res.status(400).json({ error: 'amenity_id, start_time, end_time required' });
+  const bStart = new Date(start_time), bEnd = new Date(end_time);
+  if (isNaN(bStart) || isNaN(bEnd)) return res.status(400).json({ error: 'Invalid date format' });
+  if (bEnd <= bStart) return res.status(400).json({ error: 'End time must be after start time' });
   const result = db.prepare(`INSERT INTO blackouts (amenity_id, start_time, end_time, reason, created_by_id) VALUES (?, ?, ?, ?, ?)`)
-    .run(amenity_id, start_time, end_time, reason || null, req.user.id);
+    .run(amenity_id, bStart.toISOString(), bEnd.toISOString(), reason || null, req.user.id);
   auditLog(req.user.id, 'create_blackout', 'blackout', result.lastInsertRowid, { amenity_id }, req.ip);
   res.status(201).json(db.prepare('SELECT * FROM blackouts WHERE id=?').get(result.lastInsertRowid));
 });

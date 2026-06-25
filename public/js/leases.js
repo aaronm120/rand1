@@ -43,11 +43,27 @@ route('leases', async () => {
     </tr>`;
   }
 
-  const expiring = leases.filter(l => {
+  const now = new Date();
+  const activeLeases = leases.filter(l => !l.lease_end || new Date(l.lease_end) >= now);
+  const formerLeases = leases.filter(l => l.lease_end && new Date(l.lease_end) < now);
+
+  const expiring = activeLeases.filter(l => {
     if (!l.lease_end) return false;
-    const d = Math.ceil((new Date(l.lease_end) - new Date()) / 86400000);
+    const d = Math.ceil((new Date(l.lease_end) - now) / 86400000);
     return d >= 0 && d <= 90;
   });
+
+  const leaseTable = (rows) => `
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr>
+          <th>Tenant</th><th>Building</th><th>Suite</th>
+          <th>Lease Start</th><th>Lease End</th><th>Status</th>
+          <th>Monthly Rent</th><th>Sq Ft</th><th></th>
+        </tr></thead>
+        <tbody>${rows.map(leaseRow).join('')}</tbody>
+      </table>
+    </div>`;
 
   setContent(`
     ${heroHtml('Lease Tracking', 'Track lease terms, expiration dates, and tenant details', '📄')}
@@ -58,22 +74,20 @@ route('leases', async () => {
       </div>` : ''}
     <div class="card">
       <div class="card-header">
-        <div class="card-title">${leases.length} Lease Record${leases.length!==1?'s':''}</div>
+        <div class="card-title">${activeLeases.length} Active Lease Record${activeLeases.length!==1?'s':''}</div>
         <button class="btn btn-primary btn-sm" onclick="showLeaseModal()">+ Add Lease Record</button>
       </div>
-      ${leases.length ? `
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr>
-              <th>Tenant</th><th>Building</th><th>Suite</th>
-              <th>Lease Start</th><th>Lease End</th><th>Status</th>
-              <th>Monthly Rent</th><th>Sq Ft</th><th></th>
-            </tr></thead>
-            <tbody>${leases.map(leaseRow).join('')}</tbody>
-          </table>
-        </div>` :
-        `<div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">No lease records</div><div class="empty-desc">Add lease records for your tenants.</div></div>`}
+      ${activeLeases.length ? leaseTable(activeLeases) :
+        `<div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">No active lease records</div><div class="empty-desc">Add lease records for your tenants.</div></div>`}
     </div>
+    ${formerLeases.length ? `
+    <div class="card" style="margin-top:16px">
+      <div class="card-header">
+        <div class="card-title" style="color:var(--gray-500)">Former Leases</div>
+        <span class="badge badge-gray">${formerLeases.length}</span>
+      </div>
+      ${leaseTable(formerLeases)}
+    </div>` : ''}
   `);
 });
 

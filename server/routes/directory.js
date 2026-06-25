@@ -4,7 +4,7 @@ const { requireAuth, isPM } = require('../middleware/auth');
 
 const router = express.Router();
 
-// GET /api/directory?building=728&q=search
+// GET /api/directory?building=720&q=search
 router.get('/', requireAuth, (req, res) => {
   const { building, q } = req.query;
   const pm = isPM(req.user);
@@ -13,7 +13,7 @@ router.get('/', requireAuth, (req, res) => {
   let tenantWhere = ['t.active = 1'];
   let tenantParams = [];
   if (!pm) tenantWhere.push('t.directory_hidden = 0');
-  if (building && ['728','730','732'].includes(building)) {
+  if (building && ['720','730','732'].includes(building)) {
     tenantWhere.push('t.building = ?');
     tenantParams.push(building);
   }

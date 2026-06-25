@@ -42,7 +42,7 @@ router.get('/:id', requireAuth, (req, res) => {
 router.post('/', requirePMAdmin, (req, res) => {
   const { name, building, suite } = req.body;
   if (!name?.trim() || !building) return res.status(400).json({ error: 'Name and building are required' });
-  if (!['728','730','732'].includes(building)) return res.status(400).json({ error: 'Invalid building' });
+  if (!['720','730','732'].includes(building)) return res.status(400).json({ error: 'Invalid building' });
   const result = db.prepare('INSERT INTO tenants (name, building, suite) VALUES (?, ?, ?)').run(name.trim(), building, suite || null);
   auditLog(req.user.id, 'create_tenant', 'tenant', result.lastInsertRowid, { name, building }, req.ip);
   res.status(201).json(db.prepare('SELECT * FROM tenants WHERE id=?').get(result.lastInsertRowid));
@@ -58,8 +58,8 @@ router.patch('/:id', requireAuth, (req, res) => {
   }
 
   const { name, building, suite, active, directory_hidden, cascade_users } = req.body;
-  if (isPM(req.user) && building && !['728', '730', '732'].includes(String(building))) {
-    return res.status(400).json({ error: 'Invalid building — must be 728, 730, or 732' });
+  if (isPM(req.user) && building && !['720', '730', '732'].includes(String(building))) {
+    return res.status(400).json({ error: 'Invalid building — must be 720, 730, or 732' });
   }
   const newBuilding = isPM(req.user) && building ? building : tenant.building;
   const newActive = isPM(req.user) && active !== undefined ? (active ? 1 : 0) : tenant.active;

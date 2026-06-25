@@ -43,7 +43,7 @@ db.pragma('wal_autocheckpoint = 1000');
 const DEFAULT_SETTINGS = {
   building_name: 'Randolph Office Center',
   building_tagline: 'Tenant Portal',
-  buildings: '728,730,732',           // comma-separated W. Randolph buildings
+  buildings: '720,730,732',           // comma-separated W. Randolph buildings
   building_address: 'W. Randolph Street, Chicago, IL',
   building_phone: '(312) 555-0100',
   building_email: 'management@randolphofficecenter.com',
@@ -103,7 +103,7 @@ function initializeDatabase() {
     CREATE TABLE IF NOT EXISTS tenants (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       name       TEXT NOT NULL,
-      building   TEXT NOT NULL,         -- '728', '730', '732'
+      building   TEXT NOT NULL,         -- '720', '730', '732'
       suite      TEXT,
       active     INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -193,7 +193,7 @@ function initializeDatabase() {
       content          TEXT NOT NULL,
       author_id        INTEGER NOT NULL REFERENCES users(id),
       target_type      TEXT NOT NULL DEFAULT 'portfolio', -- 'portfolio','building','tenant'
-      target_building  TEXT,     -- '728','730','732' or NULL
+      target_building  TEXT,     -- '720','730','732' or NULL
       target_tenant_id INTEGER REFERENCES tenants(id),
       urgent           INTEGER DEFAULT 0,
       pinned           INTEGER DEFAULT 0,
@@ -351,6 +351,10 @@ function initializeDatabase() {
   try { db.exec('ALTER TABLE users ADD COLUMN force_password_change INTEGER DEFAULT 0'); } catch (_) {}
   try { db.exec('ALTER TABLE notification_prefs ADD COLUMN booking_reminders INTEGER DEFAULT 1'); } catch (_) {}
   try { db.exec('ALTER TABLE bookings ADD COLUMN reminder_sent INTEGER DEFAULT 0'); } catch (_) {}
+  db.exec("UPDATE tenants SET building='720' WHERE building='728'");
+  db.exec("UPDATE leases SET building='720' WHERE building='728'");
+  db.exec("UPDATE announcements SET target_building='720' WHERE target_building='728'");
+  db.exec("UPDATE service_requests SET building='720' WHERE building='728'");
   db.exec('CREATE INDEX IF NOT EXISTS idx_reset_tokens_hash ON password_reset_tokens(token_hash)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_tenant_contacts_tenant ON tenant_contacts(tenant_id)');
   // Make leases.end_date and leases.suite nullable (requires table recreation)
@@ -427,7 +431,7 @@ function initializeDatabase() {
 
     const tenantCount = db.prepare('SELECT COUNT(*) as c FROM tenants').get().c;
     if (tenantCount === 0) {
-      const t1 = db.prepare("INSERT INTO tenants (name, building, suite) VALUES ('Acme Corp', '728', 'Suite 200')").run().lastInsertRowid;
+      const t1 = db.prepare("INSERT INTO tenants (name, building, suite) VALUES ('Acme Corp', '720', 'Suite 200')").run().lastInsertRowid;
       const t2 = db.prepare("INSERT INTO tenants (name, building, suite) VALUES ('Bright Ventures LLC', '730', 'Suite 150')").run().lastInsertRowid;
       const t3 = db.prepare("INSERT INTO tenants (name, building, suite) VALUES ('Sterling Law Partners', '732', 'Suite 300')").run().lastInsertRowid;
 

@@ -11,7 +11,7 @@ route('directory', async () => {
     isPM(u) ? apiFetch('GET', '/api/tenants') : Promise.resolve([]),
   ]);
 
-  const BUILDINGS = ['728', '730', '732'];
+  const BUILDINGS = ['720', '730', '732'];
 
   function renderTenantCard(tenant) {
     const { users = [], contacts = [] } = tenant;
@@ -95,7 +95,7 @@ function filterDirectory() {
   const q = (document.getElementById('dir-search')?.value || '').toLowerCase().trim();
   const data = window._directoryData || [];
   const u = state.user;
-  const BUILDINGS = ['728', '730', '732'];
+  const BUILDINGS = ['720', '730', '732'];
 
   if (!q) {
     document.getElementById('directory-content').innerHTML = BUILDINGS.map(bld => {

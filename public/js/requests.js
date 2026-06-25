@@ -60,7 +60,7 @@ route('requests', async () => {
   const tenantFilter = isPM(u) ? `
     <select class="form-select" id="f-building" onchange="document.dispatchEvent(new Event('filter-change'))">
       <option value="">All Buildings</option>
-      <option value="728">728 W. Randolph</option>
+      <option value="720">720 W. Randolph</option>
       <option value="730">730 W. Randolph</option>
       <option value="732">732 W. Randolph</option>
     </select>` : '';

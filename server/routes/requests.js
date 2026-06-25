@@ -59,7 +59,7 @@ router.get('/', requireAuth, (req, res) => {
 
   if (status && VALID_STATUSES.includes(status)) { where.push('r.status = ?'); params.push(status); }
   if (priority && VALID_PRIORITIES.includes(priority)) { where.push('r.priority = ?'); params.push(priority); }
-  if (building && ['728','730','732'].includes(building)) { where.push('r.building = ?'); params.push(building); }
+  if (building && ['720','730','732'].includes(building)) { where.push('r.building = ?'); params.push(building); }
   if (category_id) { where.push('r.category_id = ?'); params.push(category_id); }
 
   const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
@@ -172,7 +172,7 @@ router.post('/', requireAuth, upload.array('attachments', 5), (req, res) => {
     if (req.files?.length) {
       for (const f of req.files) {
         db.prepare(`INSERT INTO request_attachments (request_id, original_name, stored_name, mime_type, uploaded_by_id) VALUES (?, ?, ?, ?, ?)`)
-          .run(id, f.originalname, f.filename, f.mimetype, req.user.id);
+          .run(id, f.originalname, f.filename, f.mimetype || 'application/octet-stream', req.user.id);
       }
     }
 
