@@ -136,6 +136,7 @@ router.post('/login', (req, res) => {
   const prefs = db.prepare('SELECT * FROM notification_prefs WHERE user_id = ?').get(user.id);
   const token = makeToken(user);
 
+  db.prepare('UPDATE users SET last_login_at=CURRENT_TIMESTAMP WHERE id=?').run(user.id);
   auditLog(user.id, 'login', 'user', user.id, null, req.ip);
   res.json({ token, user: { ...safeUser(user), notification_prefs: prefs } });
 });
@@ -316,7 +317,7 @@ router.put('/notifications', requireAuth, (req, res) => {
 router.get('/users', requirePMAdmin, (req, res) => {
   const users = db.prepare(`
     SELECT u.id, u.email, u.name, u.role, u.tenant_id, u.title, u.phone,
-           u.directory_opt_out, u.active, u.door_code, u.mfa_enabled, u.created_at,
+           u.directory_opt_out, u.active, u.door_code, u.mfa_enabled, u.created_at, u.last_login_at,
            t.name as tenant_name, t.building as tenant_building,
            COALESCE(np.request_updates, 1)       as notif_requests,
            COALESCE(np.booking_confirmations, 1) as notif_bookings,
@@ -523,6 +524,7 @@ router.post('/mfa/verify', (req, res) => {
   db.prepare('INSERT OR IGNORE INTO notification_prefs (user_id) VALUES (?)').run(user.id);
   const prefs = db.prepare('SELECT * FROM notification_prefs WHERE user_id = ?').get(user.id);
   const token = makeToken(user);
+  db.prepare('UPDATE users SET last_login_at=CURRENT_TIMESTAMP WHERE id=?').run(user.id);
   auditLog(user.id, 'login_mfa', 'user', user.id, null, req.ip);
   res.json({ token, user: { ...safeUser(user), notification_prefs: prefs } });
 });

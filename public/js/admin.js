@@ -54,6 +54,7 @@ async function renderUsersTab(el) {
       <td>${u.tenant_name ? `${esc(u.tenant_name)} · ${buildingTag(u.tenant_building)}` : '—'}</td>
       <td>${u.active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-gray">Inactive</span>'}</td>
       <td>${fmt(u.created_at)}</td>
+      <td>${u.last_login_at ? fmt(u.last_login_at) : '<span style="color:var(--gray-400)">Never</span>'}</td>
       <td style="display:flex;gap:6px">
         <button class="btn btn-ghost btn-sm" onclick="showUserModal(${u.id})">Edit</button>
         ${canImpersonate ? `<button class="btn btn-ghost btn-sm" style="color:var(--primary)" onclick="startImpersonation(${u.id})">👁 View as</button>` : ''}
@@ -83,7 +84,7 @@ async function renderUsersTab(el) {
       </div>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Tenant</th><th>Status</th><th>Created</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Tenant</th><th>Status</th><th>Created</th><th>Last Login</th><th></th></tr></thead>
           <tbody id="users-tbody">${users.map(userRow).join('')}</tbody>
         </table>
       </div>

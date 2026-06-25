@@ -28,7 +28,7 @@ router.get('/', requireAuth, (req, res) => {
     // Users: PM sees all, tenants see opted-in users
     const optOutFilter = pm ? '' : 'AND u.directory_opt_out = 0';
     let users = db.prepare(`
-      SELECT u.id, u.name, u.title, u.email, u.phone, u.directory_opt_out, u.role
+      SELECT u.id, u.name, u.title, u.email, u.phone, u.directory_opt_out
       FROM users u
       WHERE u.tenant_id = ? AND u.active = 1 ${optOutFilter}
       ORDER BY u.name
@@ -46,7 +46,10 @@ router.get('/', requireAuth, (req, res) => {
 
     // Named contacts — PM sees all, tenants only see non-hidden contacts
     const contactFilter = pm ? '' : 'AND directory_hidden = 0';
-    tenant.contacts = db.prepare(`SELECT id, tenant_id, name, title, email, phone, is_primary, directory_hidden, created_at FROM tenant_contacts WHERE tenant_id=? ${contactFilter} ORDER BY is_primary DESC, name ASC`).all(tenant.id);
+    const contactFields = pm
+      ? 'id, tenant_id, name, title, email, phone, is_primary, directory_hidden, created_at'
+      : 'id, name, title, email, phone, is_primary, created_at';
+    tenant.contacts = db.prepare(`SELECT ${contactFields} FROM tenant_contacts WHERE tenant_id=? ${contactFilter} ORDER BY is_primary DESC, name ASC`).all(tenant.id);
     tenant.users = users;
   }
 

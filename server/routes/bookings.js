@@ -90,7 +90,7 @@ router.get('/calendar', requireAuth, (req, res) => {
   // Non-PM users see names only for their own tenant's bookings; other bookings show as anonymous
   const bookings = rawBookings.map(b => {
     if (pm || b.tenant_id === req.user.tenant_id) return b;
-    const { user_name, tenant_name, ...rest } = b;
+    const { user_name, tenant_name, user_id, tenant_id: _tid, ...rest } = b;
     return rest;
   });
 

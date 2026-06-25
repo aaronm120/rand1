@@ -351,6 +351,11 @@ function initializeDatabase() {
   try { db.exec('ALTER TABLE users ADD COLUMN force_password_change INTEGER DEFAULT 0'); } catch (_) {}
   try { db.exec('ALTER TABLE notification_prefs ADD COLUMN booking_reminders INTEGER DEFAULT 1'); } catch (_) {}
   try { db.exec('ALTER TABLE bookings ADD COLUMN reminder_sent INTEGER DEFAULT 0'); } catch (_) {}
+  try { db.exec('ALTER TABLE request_categories ADD COLUMN description TEXT'); } catch (_) {}
+  try { db.exec("ALTER TABLE request_categories ADD COLUMN icon TEXT NOT NULL DEFAULT '🏷'"); } catch (_) {}
+  try { db.exec('ALTER TABLE tenants ADD COLUMN phone TEXT'); } catch (_) {}
+  try { db.exec('ALTER TABLE tenants ADD COLUMN industry TEXT'); } catch (_) {}
+  try { db.exec('ALTER TABLE users ADD COLUMN last_login_at DATETIME'); } catch (_) {}
   db.exec("UPDATE tenants SET building='720' WHERE building='728'");
   db.exec("UPDATE leases SET building='720' WHERE building='728'");
   db.exec("UPDATE announcements SET target_building='720' WHERE target_building='728'");

@@ -40,10 +40,10 @@ router.get('/:id', requireAuth, (req, res) => {
 
 // POST /api/tenants — PM Admin only
 router.post('/', requirePMAdmin, (req, res) => {
-  const { name, building, suite } = req.body;
+  const { name, building, suite, phone, industry } = req.body;
   if (!name?.trim() || !building) return res.status(400).json({ error: 'Name and building are required' });
   if (!['720','730','732'].includes(building)) return res.status(400).json({ error: 'Invalid building' });
-  const result = db.prepare('INSERT INTO tenants (name, building, suite) VALUES (?, ?, ?)').run(name.trim(), building, suite || null);
+  const result = db.prepare('INSERT INTO tenants (name, building, suite, phone, industry) VALUES (?, ?, ?, ?, ?)').run(name.trim(), building, suite || null, phone?.trim() || null, industry?.trim() || null);
   auditLog(req.user.id, 'create_tenant', 'tenant', result.lastInsertRowid, { name, building }, req.ip);
   res.status(201).json(db.prepare('SELECT * FROM tenants WHERE id=?').get(result.lastInsertRowid));
 });
@@ -57,16 +57,18 @@ router.patch('/:id', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'Tenant admin access required' });
   }
 
-  const { name, building, suite, active, directory_hidden, cascade_users } = req.body;
+  const { name, building, suite, phone, industry, active, directory_hidden, cascade_users } = req.body;
   if (isPM(req.user) && building && !['720', '730', '732'].includes(String(building))) {
     return res.status(400).json({ error: 'Invalid building — must be 720, 730, or 732' });
   }
   const newBuilding = isPM(req.user) && building ? building : tenant.building;
   const newActive = isPM(req.user) && active !== undefined ? (active ? 1 : 0) : tenant.active;
   const newDirHidden = isPM(req.user) && directory_hidden !== undefined ? (directory_hidden ? 1 : 0) : (tenant.directory_hidden ?? 0);
+  const newPhone = phone !== undefined ? (phone?.trim() || null) : tenant.phone;
+  const newIndustry = industry !== undefined ? (industry?.trim() || null) : tenant.industry;
 
-  db.prepare(`UPDATE tenants SET name=?, building=?, suite=?, active=?, directory_hidden=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-    .run(name?.trim() || tenant.name, newBuilding, suite ?? tenant.suite, newActive, newDirHidden, req.params.id);
+  db.prepare(`UPDATE tenants SET name=?, building=?, suite=?, phone=?, industry=?, active=?, directory_hidden=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+    .run(name?.trim() || tenant.name, newBuilding, suite ?? tenant.suite, newPhone, newIndustry, newActive, newDirHidden, req.params.id);
 
   if (isPM(req.user) && newActive === 0 && cascade_users) {
     db.prepare('UPDATE users SET active=0, updated_at=CURRENT_TIMESTAMP WHERE tenant_id=?').run(req.params.id);

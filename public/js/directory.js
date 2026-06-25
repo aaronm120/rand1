@@ -114,7 +114,7 @@ function filterDirectory() {
   const matched = data.filter(t => {
     const nameMatch = t.name.toLowerCase().includes(q);
     const userMatch = (t.users||[]).some(usr => usr.name.toLowerCase().includes(q) || (usr.title||'').toLowerCase().includes(q) || (usr.email||'').toLowerCase().includes(q));
-    const contactMatch = (t.contacts||[]).some(c => c.name.toLowerCase().includes(q) || (c.role_label||'').toLowerCase().includes(q));
+    const contactMatch = (t.contacts||[]).some(c => c.name.toLowerCase().includes(q) || (c.title||'').toLowerCase().includes(q));
     return nameMatch || userMatch || contactMatch;
   });
 
@@ -146,7 +146,7 @@ function renderDirTenantCard(tenant) {
       <div class="directory-person">
         <div class="directory-avatar">${(usr.name||'?')[0].toUpperCase()}</div>
         <div class="directory-person-info">
-          <div class="directory-person-name">${esc(usr.name)}</div>
+          <div class="directory-person-name">${esc(usr.name)}${isPM(u) && usr.directory_opt_out ? ' <span style="font-size:.7rem;color:var(--gray-400)">(opted out)</span>' : ''}</div>
           ${usr.title?`<div class="directory-person-meta">${esc(usr.title)}</div>`:''}
           ${usr.email?`<div class="directory-person-meta"><a href="mailto:${esc(usr.email)}">${esc(usr.email)}</a></div>`:''}
           ${usr.phone?`<div class="directory-person-meta"><a href="tel:${esc(usr.phone)}">${esc(usr.phone)}</a></div>`:''}
@@ -157,7 +157,10 @@ function renderDirTenantCard(tenant) {
   return `<div class="directory-company">
     <div class="directory-company-header">
       <div><div class="directory-company-name">${esc(tenant.name)}</div>${tenant.suite?`<div class="directory-company-meta">Suite ${esc(tenant.suite)}</div>`:''}</div>
-      ${buildingTag(tenant.building)}
+      <div style="text-align:right">
+        ${buildingTag(tenant.building)}
+        ${isPM(u) ? `<button class="btn btn-ghost btn-sm" onclick="navigate('admin')">Manage →</button>` : ''}
+      </div>
     </div>
     ${allPeople.length ? `<div class="directory-people">${allPeople.join('')}</div>` : '<div style="font-size:.85rem;color:var(--gray-400);padding:8px 0">No listed contacts</div>'}
   </div>`;
