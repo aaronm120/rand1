@@ -342,31 +342,95 @@ async function saveTenant(id) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
+function renderContactRow(c, tenantId) {
+  return `
+    <div class="list-item" id="contact-${c.id}">
+      <div class="list-item-body">
+        <div class="list-item-title">
+          ${esc(c.name)}
+          ${c.title ? `<span class="badge badge-gray">${esc(c.title)}</span>` : ''}
+          ${c.directory_hidden ? '<span class="badge badge-gray" style="font-size:.7rem">Hidden</span>' : ''}
+        </div>
+        <div class="list-item-meta">
+          ${[c.email, c.phone].filter(Boolean).map(esc).join(' · ')}
+          ${c.door_code ? `<span style="color:var(--gray-400)"> · Door: ${esc(c.door_code)}</span>` : ''}
+        </div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="editContact(${c.id},${tenantId})">Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteContact(${c.id})">Remove</button>
+      </div>
+    </div>`;
+}
+
+function editContact(contactId, tenantId) {
+  const c = window._tenantContactsMap?.[contactId];
+  if (!c) return;
+  const el = document.getElementById('contact-' + contactId);
+  if (!el) return;
+  el.innerHTML = `
+    <div style="flex:1">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label required">Name</label><input class="form-input" id="ec-name-${contactId}" value="${esc(c.name)}"></div>
+        <div class="form-group"><label class="form-label">Role / Label</label><input class="form-input" id="ec-role-${contactId}" value="${esc(c.title || '')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="ec-email-${contactId}" type="email" value="${esc(c.email || '')}"></div>
+        <div class="form-group"><label class="form-label">Phone</label><input class="form-input" id="ec-phone-${contactId}" value="${esc(c.phone || '')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Door Code <span style="font-size:.75rem;font-weight:400;color:var(--gray-500)">(PM view only)</span></label><input class="form-input" id="ec-door-${contactId}" value="${esc(c.door_code || '')}" autocomplete="off"></div>
+        <div class="form-group" style="justify-content:flex-end;padding-top:24px">
+          <label class="form-check"><input type="checkbox" id="ec-hidden-${contactId}" ${c.directory_hidden ? 'checked' : ''}> <span>Hide from Directory</span></label>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn btn-primary btn-sm" onclick="saveContact(${contactId},${tenantId})">Save</button>
+        <button class="btn btn-ghost btn-sm" onclick="cancelEditContact(${contactId},${tenantId})">Cancel</button>
+      </div>
+    </div>`;
+  document.getElementById(`ec-name-${contactId}`)?.focus();
+}
+
+async function saveContact(contactId, tenantId) {
+  const name = document.getElementById(`ec-name-${contactId}`)?.value.trim();
+  if (!name) { toast('Name is required', 'warning'); return; }
+  const body = {
+    name,
+    title:            document.getElementById(`ec-role-${contactId}`)?.value || null,
+    email:            document.getElementById(`ec-email-${contactId}`)?.value || null,
+    phone:            document.getElementById(`ec-phone-${contactId}`)?.value || null,
+    door_code:        document.getElementById(`ec-door-${contactId}`)?.value || null,
+    directory_hidden: document.getElementById(`ec-hidden-${contactId}`)?.checked ? 1 : 0,
+  };
+  try {
+    const updated = await apiFetch('PATCH', `/api/tenants/contacts/${contactId}`, body);
+    window._tenantContactsMap[contactId] = updated;
+    const el = document.getElementById('contact-' + contactId);
+    if (el) el.outerHTML = renderContactRow(updated, tenantId);
+    toast('Contact updated', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function cancelEditContact(contactId, tenantId) {
+  const c = window._tenantContactsMap?.[contactId];
+  if (!c) return;
+  const el = document.getElementById('contact-' + contactId);
+  if (el) el.outerHTML = renderContactRow(c, tenantId);
+}
+
 function showTenantContactsModal(tenantId) {
   const loadAndShow = async () => {
     const tenant = await apiFetch('GET', `/api/tenants/${tenantId}`).catch(()=>({}));
     const contacts = tenant.contacts || [];
 
-    const renderContacts = (cs) => cs.map(c => `
-      <div class="list-item" id="contact-${c.id}">
-        <div class="list-item-body">
-          <div class="list-item-title">
-            ${esc(c.name)}
-            ${c.title ? `<span class="badge badge-gray">${esc(c.title)}</span>` : ''}
-            ${c.directory_hidden ? '<span class="badge badge-gray" style="font-size:.7rem">Hidden from Directory</span>' : ''}
-          </div>
-          <div class="list-item-meta">
-            ${[c.email, c.phone].filter(Boolean).map(esc).join(' · ')}
-            ${c.door_code ? `<span style="color:var(--gray-400)"> · Door: ${esc(c.door_code)}</span>` : ''}
-          </div>
-        </div>
-        <button class="btn btn-danger btn-sm" onclick="deleteContact(${c.id},${tenantId})">Remove</button>
-      </div>`).join('');
+    window._tenantContactsMap = {};
+    contacts.forEach(c => { window._tenantContactsMap[c.id] = c; });
 
     showModal(`
       <div class="modal-header"><div class="modal-title">Named Contacts · ${esc(tenant.name)}</div><button class="modal-close" onclick="closeModal()">×</button></div>
       <div class="modal-body">
-        <div id="contacts-list">${contacts.length ? renderContacts(contacts) : '<div data-empty="1" style="font-size:.875rem;color:var(--gray-400);margin-bottom:12px">No contacts yet</div>'}</div>
+        <div id="contacts-list">${contacts.length ? contacts.map(c => renderContactRow(c, tenantId)).join('') : '<div data-empty="1" style="font-size:.875rem;color:var(--gray-400);margin-bottom:12px">No contacts yet</div>'}</div>
         <div style="border-top:1px solid var(--gray-200);padding-top:14px;margin-top:12px">
           <div style="font-weight:600;margin-bottom:10px;font-size:.9rem">Add Contact</div>
           <div class="form-row">
@@ -403,34 +467,23 @@ async function addContact(tenantId) {
   if (!body.name) { toast('Contact name is required', 'warning'); return; }
   try {
     const c = await apiFetch('POST', `/api/tenants/${tenantId}/contacts`, body);
+    if (!window._tenantContactsMap) window._tenantContactsMap = {};
+    window._tenantContactsMap[c.id] = c;
     const contactsList = document.getElementById('contacts-list');
     contactsList.querySelector('[data-empty]')?.remove();
-    contactsList.insertAdjacentHTML('beforeend', `
-      <div class="list-item" id="contact-${c.id}">
-        <div class="list-item-body">
-          <div class="list-item-title">
-            ${esc(c.name)}
-            ${c.title ? `<span class="badge badge-gray">${esc(c.title)}</span>` : ''}
-            ${c.directory_hidden ? '<span class="badge badge-gray" style="font-size:.7rem">Hidden from Directory</span>' : ''}
-          </div>
-          <div class="list-item-meta">
-            ${[c.email, c.phone].filter(Boolean).map(esc).join(' · ')}
-            ${c.door_code ? `<span style="color:var(--gray-400)"> · Door: ${esc(c.door_code)}</span>` : ''}
-          </div>
-        </div>
-        <button class="btn btn-danger btn-sm" onclick="deleteContact(${c.id},${tenantId})">Remove</button>
-      </div>`);
+    contactsList.insertAdjacentHTML('beforeend', renderContactRow(c, tenantId));
     ['nc-name','nc-role','nc-email','nc-phone','nc-door-code'].forEach(id => { const el=document.getElementById(id); if(el)el.value=''; });
     const dirHidden = document.getElementById('nc-dir-hidden');
     if (dirHidden) dirHidden.checked = false;
   } catch (e) { toast(e.message, 'error'); }
 }
 
-async function deleteContact(id, tenantId) {
+async function deleteContact(contactId) {
   if (!confirm('Remove this contact?')) return;
   try {
-    await apiFetch('DELETE', `/api/tenants/${tenantId}/contacts/${id}`);
-    document.getElementById('contact-' + id)?.remove();
+    await apiFetch('DELETE', `/api/tenants/contacts/${contactId}`);
+    document.getElementById('contact-' + contactId)?.remove();
+    if (window._tenantContactsMap) delete window._tenantContactsMap[contactId];
   } catch (e) { toast(e.message, 'error'); }
 }
 

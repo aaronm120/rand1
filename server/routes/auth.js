@@ -411,8 +411,8 @@ router.put('/users/:id', requirePMAdmin, (req, res) => {
   if (notifications_enabled !== undefined) {
     const v = notifications_enabled ? 1 : 0;
     db.prepare('INSERT OR IGNORE INTO notification_prefs (user_id) VALUES (?)').run(req.params.id);
-    db.prepare(`UPDATE notification_prefs SET request_updates=?, booking_confirmations=?, announcements=? WHERE user_id=?`)
-      .run(v, v, v, req.params.id);
+    db.prepare(`UPDATE notification_prefs SET request_updates=?, booking_confirmations=?, booking_reminders=?, announcements=? WHERE user_id=?`)
+      .run(v, v, v, v, req.params.id);
   }
 
   auditLog(req.user.id, 'update_user', 'user', req.params.id, { role, password_changed: !!password, notifications_enabled }, req.ip);
