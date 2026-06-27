@@ -19,17 +19,29 @@ function isTenantAdmin(user) { return user?.role === 'tenant_admin'; }
 // ── Utils ─────────────────────────────────────────────────────────
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
+const TZ = 'America/Chicago';
+
 function fmt(iso, opts) {
   if (!iso) return '—';
   const d = new Date(iso);
-  return isNaN(d) ? iso : d.toLocaleString('en-US', opts || { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
+  if (isNaN(d)) return iso;
+  if (opts) return d.toLocaleString('en-US', { timeZone: TZ, ...opts });
+  const datePart = d.toLocaleDateString('en-US', { timeZone: TZ, month: '2-digit', day: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+  const timePart = d.toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' });
+  return `${datePart} ${timePart}`;
 }
-function fmtDate(iso) { return fmt(iso, { month:'short', day:'numeric', year:'numeric' }); }
-function fmtTime(iso) { return fmt(iso, { hour:'numeric', minute:'2-digit' }); }
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString('en-US', { timeZone: TZ, month: '2-digit', day: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+}
+function fmtTime(iso) { return fmt(iso, { hour: 'numeric', minute: '2-digit' }); }
 function fmtDateInput(iso) {
   if (!iso) return '';
   const d = new Date(iso);
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  if (isNaN(d)) return '';
+  return d.toLocaleDateString('en-CA', { timeZone: TZ });
 }
 function initials(n) {
   if (!n) return '?';

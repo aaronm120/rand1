@@ -52,6 +52,7 @@ route('dashboard', async () => {
 
   // Recent requests
   const recentReqs = (isPM(u) ? requests : requests.filter(r => r.tenant_id === u.tenant_id))
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     .slice(0, 5);
 
   const reqsHtml = recentReqs.length ? recentReqs.map(r => `

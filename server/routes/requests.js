@@ -228,14 +228,24 @@ router.patch('/:id/status', requireAuth, (req, res) => {
 
   const full = getRequestById(req.params.id);
   if (isPM(req.user)) {
-    // PM changed status → notify the submitter (skip if PM is somehow the submitter)
-    if (req_.submitted_by_id !== req.user.id) {
-      const submitter = db.prepare(`
+    // Notify the tenant submitter. Guard against the edge case where submitted_by_id
+    // points to a PM (fallback when a PM created the request for a tenant with no users).
+    const submitter = db.prepare(`
+      SELECT u.email, np.request_updates FROM users u
+      LEFT JOIN notification_prefs np ON np.user_id = u.id
+      WHERE u.id = ? AND u.active = 1 AND u.role NOT IN ('pm_admin', 'pm_user')
+    `).get(req_.submitted_by_id);
+
+    if (submitter) {
+      notifyRequestStatus(full, status, [submitter]).catch(err => console.warn('[Email] Notification failed:', err.message));
+    } else if (req_.submitted_by_id !== req.user.id) {
+      // submitted_by_id was a PM fallback — notify all active tenant users instead
+      const tenantUsers = db.prepare(`
         SELECT u.email, np.request_updates FROM users u
         LEFT JOIN notification_prefs np ON np.user_id = u.id
-        WHERE u.id = ? AND u.active = 1
-      `).get(req_.submitted_by_id);
-      notifyRequestStatus(full, status, submitter ? [submitter] : []).catch(err => console.warn('[Email] Notification failed:', err.message));
+        WHERE u.tenant_id = ? AND u.active = 1 AND u.role NOT IN ('pm_admin', 'pm_user')
+      `).all(req_.tenant_id);
+      if (tenantUsers.length) notifyRequestStatus(full, status, tenantUsers).catch(err => console.warn('[Email] Notification failed:', err.message));
     }
   } else {
     // Tenant closed their own request → notify PM users so they're aware
@@ -283,12 +293,29 @@ router.post('/:id/comments', requireAuth, (req, res) => {
   const req_ = db.prepare('SELECT * FROM service_requests WHERE id=?').get(req.params.id);
   if (!req_) return res.status(404).json({ error: 'Request not found' });
   if (!isPM(req.user) && req_.tenant_id !== req.user.tenant_id) return res.status(403).json({ error: 'Access denied' });
-  const result = db.prepare(`INSERT INTO service_request_comments (request_id, author_id, content) VALUES (?, ?, ?)`)
-    .run(req.params.id, req.user.id, content.trim());
+  if (req_.status === 'closed') return res.status(403).json({ error: 'Cannot comment on a closed request' });
+
+  const autoAdvance = isPM(req.user) && req_.status === 'open';
+
+  const commentId = db.transaction(() => {
+    const r = db.prepare(`INSERT INTO service_request_comments (request_id, author_id, content) VALUES (?, ?, ?)`)
+      .run(req.params.id, req.user.id, content.trim());
+    if (autoAdvance) {
+      db.prepare(`UPDATE service_requests SET status='in_progress', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(req.params.id);
+      db.prepare(`INSERT INTO request_status_history (request_id, from_status, to_status, changed_by_id, note) VALUES (?, 'open', 'in_progress', ?, NULL)`)
+        .run(req.params.id, req.user.id);
+    }
+    return r.lastInsertRowid;
+  })();
+
+  if (autoAdvance) {
+    auditLog(req.user.id, 'status_change', 'service_request', req.params.id, { from: 'open', to: 'in_progress', auto: true }, req.ip);
+  }
+
   const comment = db.prepare(`
     SELECT c.*, u.name as author_name, u.role as author_role
     FROM service_request_comments c JOIN users u ON c.author_id = u.id WHERE c.id = ?
-  `).get(result.lastInsertRowid);
+  `).get(commentId);
 
   const full = getRequestById(req.params.id);
   notifyNewComment(full, comment, isPM(req.user)).catch(err => console.warn('[Email] Notification failed:', err.message));
@@ -301,6 +328,7 @@ router.post('/:id/attachments', requireAuth, upload.array('attachments', 5), (re
   const req_ = db.prepare('SELECT * FROM service_requests WHERE id=?').get(req.params.id);
   if (!req_) return res.status(404).json({ error: 'Request not found' });
   if (!isPM(req.user) && req_.tenant_id !== req.user.tenant_id) return res.status(403).json({ error: 'Access denied' });
+  if (req_.status === 'closed') return res.status(403).json({ error: 'Cannot attach files to a closed request' });
   if (!req.files?.length) return res.status(400).json({ error: 'No files provided' });
 
   const saved = [];

@@ -128,6 +128,18 @@ route('new-request', async () => {
     isPM(u) ? apiFetch('GET', '/api/tenants') : Promise.resolve([]),
   ]);
 
+  if (!categories.length) {
+    setContent(`
+      ${heroHtml('New Service Request', 'Submit a maintenance or facility request', '🔧')}
+      <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <div class="empty-title">No request categories available</div>
+        <div class="empty-desc">Building management hasn't set up request categories yet. Please contact them directly.</div>
+        <button class="btn btn-secondary" style="margin-top:14px" onclick="navigate('requests')">Back</button>
+      </div>`);
+    return;
+  }
+
   const tenantSelect = isPM(u) ? `
     <div class="form-group">
       <label class="form-label required">Tenant (creating on behalf of)</label>
@@ -247,7 +259,10 @@ route('request-detail', async ({ id }) => {
       <div class="card-body">
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Update Status</label>
+            <label class="form-label" style="display:flex;align-items:center;gap:6px">
+              Update Status
+              <button type="button" onclick="showStatusGuide()" style="background:none;border:none;cursor:pointer;padding:0;line-height:1;color:var(--gray-400);font-size:.85rem" title="What do these statuses mean?">ℹ️</button>
+            </label>
             <div style="display:flex;gap:8px">
               <select class="form-select" id="new-status">
                 ${statusOptions.map(s => `<option value="${s}" ${s===req.status?'selected':''}>${s.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</option>`).join('')}
@@ -381,6 +396,38 @@ function renderNotes(notes) {
     </div>`).join('');
 }
 
+function showStatusGuide() {
+  showModal(`
+    <div class="modal-header"><div class="modal-title">Request Status Guide</div><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <span class="badge badge-info" style="flex-shrink:0;margin-top:1px">Open</span>
+          <span style="font-size:.9rem;color:var(--gray-700)">The request has been opened and is awaiting review.</span>
+        </div>
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <span class="badge badge-warning" style="flex-shrink:0;margin-top:1px">In Progress</span>
+          <span style="font-size:.9rem;color:var(--gray-700)">Management is aware of the situation and is actively working on the matter.</span>
+        </div>
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <span class="badge badge-purple" style="flex-shrink:0;margin-top:1px">Pending Tenant</span>
+          <span style="font-size:.9rem;color:var(--gray-700)">Management is waiting for the tenant's action or response before proceeding.</span>
+        </div>
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <span class="badge badge-success" style="flex-shrink:0;margin-top:1px">Resolved</span>
+          <span style="font-size:.9rem;color:var(--gray-700)">The issue should have been resolved. May need further input from the tenant to confirm.</span>
+        </div>
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <span class="badge badge-gray" style="flex-shrink:0;margin-top:1px">Closed</span>
+          <span style="font-size:.9rem;color:var(--gray-700)">Matter is fully closed with no further action required.</span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+    </div>`);
+}
+
 async function updateStatus(reqId) {
   const status = document.getElementById('new-status')?.value;
   try {
@@ -401,11 +448,16 @@ async function updatePriority(reqId) {
 
 async function closeRequest(reqId) {
   if (!confirm('Mark this request as closed? You can contact building management if the issue reoccurs.')) return;
+  const btn = document.querySelector(`button[onclick="closeRequest(${reqId})"]`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Closing…'; }
   try {
     await apiFetch('PATCH', `/api/requests/${reqId}/status`, { status: 'closed' });
     toast('Request closed', 'success');
     navigate('request-detail', { id: reqId });
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) {
+    toast(e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Mark as Closed'; }
+  }
 }
 
 async function addComment(reqId) {
